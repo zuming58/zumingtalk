@@ -1,0 +1,39 @@
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
+
+# JavaScript prototype dependencies and output
+prototype/node_modules/
+prototype/dist/
+prototype/.npm-cache/
+*.log
+
+# .NET build output
+**/bin/
+**/obj/
+TestResults/
+artifacts/
+
+# Local runtime data
+data/
+recordings/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+secrets.json
+credentials.json
+*.pfx
+*.snk
