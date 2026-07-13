@@ -106,6 +106,32 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_PersistsSelectedMicrophone()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var viewModel = new Application.Shell.ShellViewModel(
+            store,
+            store,
+            store,
+            null,
+            paths,
+            null,
+            new FakeAsrProviderFactory(),
+            new FakeMicrophoneDeviceService());
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.SelectedMicrophone = viewModel.Microphones.Single(device => device.DeviceNumber == 2);
+
+        await viewModel.SaveSettingsAsync();
+
+        var settings = await ((Domain.Services.ISettingsRepository)store).GetAsync(CancellationToken.None);
+        Assert.Equal(2, settings.Recognition.MicrophoneDeviceNumber);
+        Assert.Equal("USB Mic", settings.Recognition.MicrophoneName);
+    }
+
+    [Fact]
     public async Task ShellViewModel_Retranscribe_UpdatesExistingRecordWithAliyunResult()
     {
         using var temp = new TempDirectory();
@@ -237,5 +263,14 @@ public sealed class SqliteStoreTests
             RetranscribeWasCalled = true;
             return Task.FromResult(RetranscribeText);
         }
+    }
+
+    private sealed class FakeMicrophoneDeviceService : Domain.Services.IMicrophoneDeviceService
+    {
+        public IReadOnlyList<Domain.Services.MicrophoneDevice> ListDevices() =>
+        [
+            new Domain.Services.MicrophoneDevice(0, "Default"),
+            new Domain.Services.MicrophoneDevice(2, "USB Mic")
+        ];
     }
 }

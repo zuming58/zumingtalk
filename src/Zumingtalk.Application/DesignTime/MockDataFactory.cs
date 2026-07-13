@@ -57,7 +57,8 @@ public static class MockDataFactory
                 AppKeyPreview: "a9f2••••••••7c1",
                 AccessKeyIdPreview: "LTAI5t••••••••••••",
                 OralSmoothingEnabled: true,
-                MicrophoneName: "系统默认麦克风"),
+                MicrophoneName: "系统默认麦克风",
+                MicrophoneDeviceNumber: 0),
             new HotkeySettings(
                 PrimaryHotkey: "右 Alt",
                 FallbackHotkeyEnabled: true,

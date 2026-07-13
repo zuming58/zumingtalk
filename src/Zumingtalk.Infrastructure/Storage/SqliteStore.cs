@@ -192,6 +192,8 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
     {
         await InitializeAsync(cancellationToken);
         await SetSettingAsync("oral_smoothing", settings.Recognition.OralSmoothingEnabled ? "true" : "false", cancellationToken);
+        await SetSettingAsync("microphone_device_number", settings.Recognition.MicrophoneDeviceNumber.ToString(CultureInfo.InvariantCulture), cancellationToken);
+        await SetSettingAsync("microphone_name", settings.Recognition.MicrophoneName, cancellationToken);
         await SetSettingAsync("fallback_hotkey_enabled", settings.Hotkeys.FallbackHotkeyEnabled ? "true" : "false", cancellationToken);
         await SetSettingAsync("preferred_insertion_mode", settings.Compatibility.PreferredMode.ToString(), cancellationToken);
     }
@@ -214,9 +216,12 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("aliyun_access_key_secret", ProtectedSecret.Protect(credentials.AccessKeySecret), cancellationToken);
     }
 
-    private static async Task<AppSettings> BuildSettingsAsync(Task<AliyunCredentialSettings> credentialsTask, CancellationToken cancellationToken)
+    private async Task<AppSettings> BuildSettingsAsync(Task<AliyunCredentialSettings> credentialsTask, CancellationToken cancellationToken)
     {
         var credentials = await credentialsTask;
+        var microphoneName = await GetSettingAsync("microphone_name", cancellationToken) ?? "系统默认麦克风";
+        var microphoneDeviceNumberText = await GetSettingAsync("microphone_device_number", cancellationToken) ?? "0";
+        _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
         cancellationToken.ThrowIfCancellationRequested();
         return new AppSettings(
             new RecognitionSettings(
@@ -224,7 +229,8 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
                 Mask(credentials.AppKey),
                 Mask(credentials.AccessKeyId),
                 OralSmoothingEnabled: true,
-                MicrophoneName: "系统默认麦克风"),
+                MicrophoneName: microphoneName,
+                MicrophoneDeviceNumber: microphoneDeviceNumber),
             new HotkeySettings("右 Alt", FallbackHotkeyEnabled: true, "Ctrl + Win + Space"),
             new CompatibilitySettings("尚未捕获", TextInsertionMethod.Auto, false, TextInsertionMethod.Auto),
             new LocalDataSettings(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zumingtalk", "recordings"), 3));

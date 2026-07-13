@@ -17,6 +17,7 @@ public sealed class ShellViewModel : ObservableObject
     private readonly IAppPaths? appPaths;
     private readonly IClipboardService? clipboardService;
     private readonly IAsrProviderFactory? asrProviderFactory;
+    private readonly IMicrophoneDeviceService? microphoneDeviceService;
     private string selectedPage = "Home";
     private TranscriptionRecordViewModel? selectedRecord;
     private TranscriptionRecordViewModel? menuRecord;
@@ -29,6 +30,7 @@ public sealed class ShellViewModel : ObservableObject
     private string aliyunAppKey = string.Empty;
     private string aliyunAccessKeyId = string.Empty;
     private string aliyunAccessKeySecret = string.Empty;
+    private MicrophoneDevice? selectedMicrophone;
 
     public ShellViewModel()
         : this(null, null, null, null, null)
@@ -42,7 +44,8 @@ public sealed class ShellViewModel : ObservableObject
         IAudioPlaybackService? audioPlaybackService,
         IAppPaths? appPaths,
         IClipboardService? clipboardService = null,
-        IAsrProviderFactory? asrProviderFactory = null)
+        IAsrProviderFactory? asrProviderFactory = null,
+        IMicrophoneDeviceService? microphoneDeviceService = null)
     {
         this.historyRepository = historyRepository;
         this.statisticsRepository = statisticsRepository;
@@ -51,8 +54,10 @@ public sealed class ShellViewModel : ObservableObject
         this.appPaths = appPaths;
         this.clipboardService = clipboardService;
         this.asrProviderFactory = asrProviderFactory;
+        this.microphoneDeviceService = microphoneDeviceService;
 
         Records = MockDataFactory.CreateRecords();
+        Microphones = new ObservableCollection<MicrophoneDevice>();
         statistics = MockDataFactory.CreateStatistics();
         settings = MockDataFactory.CreateSettings();
 
@@ -76,6 +81,8 @@ public sealed class ShellViewModel : ObservableObject
     }
 
     public ObservableCollection<TranscriptionRecordViewModel> Records { get; }
+
+    public ObservableCollection<MicrophoneDevice> Microphones { get; }
 
     public DictationStatistics Statistics
     {
@@ -113,6 +120,25 @@ public sealed class ShellViewModel : ObservableObject
     {
         get => aliyunAccessKeySecret;
         set => SetProperty(ref aliyunAccessKeySecret, value);
+    }
+
+    public MicrophoneDevice? SelectedMicrophone
+    {
+        get => selectedMicrophone;
+        set
+        {
+            if (SetProperty(ref selectedMicrophone, value) && value is not null)
+            {
+                Settings = Settings with
+                {
+                    Recognition = Settings.Recognition with
+                    {
+                        MicrophoneName = value.Name,
+                        MicrophoneDeviceNumber = value.DeviceNumber
+                    }
+                };
+            }
+        }
     }
 
     public string SelectedPage
@@ -219,6 +245,8 @@ public sealed class ShellViewModel : ObservableObject
             LoadAliyunCredentialFields(credentials);
         }
 
+        LoadMicrophones();
+
         if (historyRepository is not null)
         {
             await historyRepository.InitializeAsync(cancellationToken);
@@ -234,6 +262,19 @@ public sealed class ShellViewModel : ObservableObject
         {
             Statistics = await statisticsRepository.GetAsync(cancellationToken);
         }
+    }
+
+    private void LoadMicrophones()
+    {
+        Microphones.Clear();
+        var devices = microphoneDeviceService?.ListDevices() ?? [];
+        foreach (var device in devices)
+        {
+            Microphones.Add(device);
+        }
+
+        SelectedMicrophone = Microphones.FirstOrDefault(device => device.DeviceNumber == Settings.Recognition.MicrophoneDeviceNumber)
+            ?? Microphones.FirstOrDefault();
     }
 
     public async Task ReloadRecordsAsync(CancellationToken cancellationToken)

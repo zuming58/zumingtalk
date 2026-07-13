@@ -359,10 +359,10 @@
 
                                 <StackPanel Width="440" HorizontalAlignment="Left">
                                     <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="输入设备" />
-                                    <ComboBox Height="43" Margin="0,8,0,0" SelectedIndex="0">
-                                        <ComboBoxItem Content="系统默认麦克风" />
-                                        <ComboBoxItem Content="麦克风阵列 (Realtek Audio)" />
-                                    </ComboBox>
+                                    <ComboBox Height="43" Margin="0,8,0,0"
+                                              DisplayMemberPath="Name"
+                                              ItemsSource="{Binding Microphones}"
+                                              SelectedItem="{Binding SelectedMicrophone, Mode=TwoWay}" />
                                 </StackPanel>
 
                                 <Grid Width="550" HorizontalAlignment="Left" Margin="0,18,0,18">

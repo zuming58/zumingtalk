@@ -7,7 +7,8 @@ public sealed record RecognitionSettings(
     string AppKeyPreview,
     string AccessKeyIdPreview,
     bool OralSmoothingEnabled,
-    string MicrophoneName);
+    string MicrophoneName,
+    int MicrophoneDeviceNumber = 0);
 
 public sealed record HotkeySettings(
     string PrimaryHotkey,

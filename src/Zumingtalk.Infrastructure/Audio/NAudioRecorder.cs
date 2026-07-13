@@ -7,15 +7,17 @@ namespace Zumingtalk.Infrastructure.Audio;
 public sealed class NAudioRecorder : IAudioRecorder, IDisposable
 {
     private readonly IAppPaths appPaths;
+    private readonly Func<int> getDeviceNumber;
     private WaveInEvent? waveIn;
     private WaveFileWriter? writer;
     private Stopwatch? stopwatch;
     private string? currentAudioPath;
     private TaskCompletionSource<Exception?>? recordingStopped;
 
-    public NAudioRecorder(IAppPaths appPaths)
+    public NAudioRecorder(IAppPaths appPaths, Func<int>? getDeviceNumber = null)
     {
         this.appPaths = appPaths;
+        this.getDeviceNumber = getDeviceNumber ?? (() => 0);
     }
 
     public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
@@ -33,7 +35,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         currentAudioPath = Path.Combine(appPaths.RecordingsDirectory, $"{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.wav");
         waveIn = new WaveInEvent
         {
-            DeviceNumber = 0,
+            DeviceNumber = getDeviceNumber(),
             WaveFormat = new WaveFormat(16000, 16, 1),
             BufferMilliseconds = 100
         };
