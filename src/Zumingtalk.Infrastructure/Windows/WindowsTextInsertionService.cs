@@ -68,27 +68,50 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target is elevated; text copied for manual paste."));
         }
 
-        var pasted = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: true, out var pasteMessage);
-        if (pasted)
+        var pasted = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: true);
+        if (pasted.Verified)
         {
-            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.PasteMessage, pasteMessage));
+            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.PasteMessage, pasted.Message));
         }
 
-        var sent = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: false, out var sendInputMessage);
-        if (sent)
+        if (pasted.KeepClipboardFallback)
         {
-            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.SendInputPaste, sendInputMessage));
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, pasted.Message));
+        }
+
+        var sent = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: false);
+        if (sent.Verified)
+        {
+            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.SendInputPaste, sent.Message));
+        }
+
+        if (sent.KeepClipboardFallback)
+        {
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, sent.Message));
         }
 
         Clipboard.SetText(text);
         return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Automatic insertion was not verified; text copied."));
     }
 
-    private static bool TryClipboardPaste(IntPtr focusHandle, string text, bool useWindowMessage, out string message)
+    internal static PasteAttemptResult EvaluatePasteAttempt(int beforeLength, int afterLength, string methodName)
+    {
+        if (beforeLength < 0 || afterLength < 0)
+        {
+            return new PasteAttemptResult(false, true, $"{methodName} could not be verified; text kept on clipboard.");
+        }
+
+        return afterLength > beforeLength
+            ? new PasteAttemptResult(true, false, $"{methodName} was verified.")
+            : new PasteAttemptResult(false, false, $"{methodName} did not change target text.");
+    }
+
+    private static PasteAttemptResult TryClipboardPaste(IntPtr focusHandle, string text, bool useWindowMessage)
     {
         var previousText = TryGetClipboardText();
         Clipboard.SetText(text);
         var before = GetTextLength(focusHandle);
+        var methodName = useWindowMessage ? "WM_PASTE" : "SendInput Ctrl+V";
 
         if (useWindowMessage)
         {
@@ -101,16 +124,17 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         Thread.Sleep(120);
         var after = GetTextLength(focusHandle);
-        var verified = after < 0 || before < 0 || after >= before + Math.Min(text.Length, 1);
+        var result = EvaluatePasteAttempt(before, after, methodName);
 
-        if (verified && previousText is not null)
+        if (!result.KeepClipboardFallback && previousText is not null)
         {
             Clipboard.SetText(previousText);
         }
 
-        message = verified ? "Paste command was sent." : "Paste command could not be verified.";
-        return verified;
+        return result;
     }
+
+    internal sealed record PasteAttemptResult(bool Verified, bool KeepClipboardFallback, string Message);
 
     private static CapturedInputTarget None(string processName) =>
         new(InputTargetKind.None, IntPtr.Zero, IntPtr.Zero, 0, processName, GetCurrentIntegrityLevel());

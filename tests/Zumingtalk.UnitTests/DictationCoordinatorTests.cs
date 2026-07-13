@@ -2,6 +2,7 @@ using Zumingtalk.Application.Dictation;
 using Zumingtalk.Domain.Dictation;
 using Zumingtalk.Domain.Services;
 using Zumingtalk.Infrastructure.Asr;
+using Zumingtalk.Infrastructure.Windows;
 
 namespace Zumingtalk.UnitTests;
 
@@ -115,6 +116,24 @@ public sealed class DictationCoordinatorTests
         aggregator.ApplyResult("SentenceEnd", "第二句。");
 
         Assert.Equal("第一句。第二句。", aggregator.GetText());
+    }
+
+    [Fact]
+    public void TextInsertion_UnknownPasteResult_KeepsClipboardFallback()
+    {
+        var result = WindowsTextInsertionService.EvaluatePasteAttempt(-1, -1, "WM_PASTE");
+
+        Assert.False(result.Verified);
+        Assert.True(result.KeepClipboardFallback);
+    }
+
+    [Fact]
+    public void TextInsertion_LengthIncrease_IsVerified()
+    {
+        var result = WindowsTextInsertionService.EvaluatePasteAttempt(4, 8, "WM_PASTE");
+
+        Assert.True(result.Verified);
+        Assert.False(result.KeepClipboardFallback);
     }
 
     private sealed class FakeAudioRecorder : IAudioRecorder
