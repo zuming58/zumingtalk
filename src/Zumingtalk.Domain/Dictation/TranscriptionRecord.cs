@@ -12,4 +12,5 @@ public sealed record TranscriptionRecord(
     int RetryCount,
     int CharacterCount,
     TextInsertionMethod InsertionMethod = TextInsertionMethod.Auto,
-    string Source = "直接说");
+    string Source = "直接说",
+    string? ErrorMessage = null);

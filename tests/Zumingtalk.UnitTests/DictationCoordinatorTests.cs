@@ -54,11 +54,14 @@ public sealed class DictationCoordinatorTests
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
 
+        public event EventHandler<PcmAudioAvailableEventArgs>? PcmAudioAvailable;
+
         public Task CancelAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
             LevelChanged?.Invoke(this, new AudioLevelChangedEventArgs(0.4));
+            PcmAudioAvailable?.Invoke(this, new PcmAudioAvailableEventArgs([1, 2, 3, 4]));
             return Task.CompletedTask;
         }
 

@@ -4,6 +4,8 @@ public interface IAudioRecorder
 {
     event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
 
+    event EventHandler<PcmAudioAvailableEventArgs>? PcmAudioAvailable;
+
     Task StartAsync(CancellationToken cancellationToken);
 
     Task<AudioRecordingResult> StopAsync(CancellationToken cancellationToken);
@@ -19,6 +21,16 @@ public sealed class AudioLevelChangedEventArgs : EventArgs
     }
 
     public double Level { get; }
+}
+
+public sealed class PcmAudioAvailableEventArgs : EventArgs
+{
+    public PcmAudioAvailableEventArgs(byte[] buffer)
+    {
+        Buffer = buffer;
+    }
+
+    public byte[] Buffer { get; }
 }
 
 public sealed record AudioRecordingResult(string AudioPath, TimeSpan Duration);

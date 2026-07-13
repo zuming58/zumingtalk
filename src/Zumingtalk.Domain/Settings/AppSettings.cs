@@ -29,3 +29,8 @@ public sealed record AppSettings(
     HotkeySettings Hotkeys,
     CompatibilitySettings Compatibility,
     LocalDataSettings LocalData);
+
+public sealed record AliyunCredentialSettings(
+    string AppKey,
+    string AccessKeyId,
+    string AccessKeySecret);

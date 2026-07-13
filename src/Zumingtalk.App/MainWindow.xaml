@@ -120,7 +120,8 @@
                                                     HorizontalContentAlignment="Left"
                                                     BorderThickness="0"
                                                     Background="Transparent"
-                                                    Command="{Binding DataContext.PlayCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                    Command="{Binding DataContext.PlayCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Text="&#xE768;" />
                                                     <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="14" Text="播放录音" />
@@ -131,7 +132,8 @@
                                                     HorizontalContentAlignment="Left"
                                                     BorderThickness="0"
                                                     Background="Transparent"
-                                                    Command="{Binding DataContext.RetranscribeCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                    Command="{Binding DataContext.RetranscribeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Text="&#xE72C;" />
                                                     <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="14" Text="重新转写" />
