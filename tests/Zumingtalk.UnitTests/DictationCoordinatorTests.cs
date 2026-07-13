@@ -94,6 +94,29 @@ public sealed class DictationCoordinatorTests
         Assert.Equal([1, 2, 3, 4], chunks[0].Buffer);
     }
 
+    [Fact]
+    public void AliyunTranscriptAggregator_AppendsSentenceEndAndKeepsCurrentInterim()
+    {
+        var aggregator = new AliyunTranscriptAggregator();
+
+        aggregator.ApplyResult("TranscriptionResultChanged", "第一句");
+        aggregator.ApplyResult("SentenceEnd", "第一句。");
+        aggregator.ApplyResult("TranscriptionResultChanged", "第二句");
+
+        Assert.Equal("第一句。第二句", aggregator.GetText());
+    }
+
+    [Fact]
+    public void AliyunTranscriptAggregator_DoesNotOverwriteEarlierSentences()
+    {
+        var aggregator = new AliyunTranscriptAggregator();
+
+        aggregator.ApplyResult("SentenceEnd", "第一句。");
+        aggregator.ApplyResult("SentenceEnd", "第二句。");
+
+        Assert.Equal("第一句。第二句。", aggregator.GetText());
+    }
+
     private sealed class FakeAudioRecorder : IAudioRecorder
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;

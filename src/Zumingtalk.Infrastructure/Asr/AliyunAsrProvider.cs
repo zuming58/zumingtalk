@@ -88,7 +88,7 @@ public sealed class AliyunAsrProvider : IAsrProvider
         private readonly SemaphoreSlim sendLock = new(1, 1);
         private readonly Task receiveTask;
         private readonly object sync = new();
-        private string finalText = string.Empty;
+        private readonly AliyunTranscriptAggregator transcriptAggregator = new();
         private TaskCompletionSource<string> completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private AliyunAsrSession(ClientWebSocket socket, string taskId)
@@ -254,15 +254,14 @@ public sealed class AliyunAsrProvider : IAsrProvider
                 ? nameElement.GetString()
                 : null;
 
-            if (string.Equals(name, "SentenceEnd", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(name, "TranscriptionResultChanged", StringComparison.OrdinalIgnoreCase))
+            if ((string.Equals(name, "SentenceEnd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "TranscriptionResultChanged", StringComparison.OrdinalIgnoreCase)) &&
+                root.TryGetProperty("payload", out var payload) &&
+                payload.TryGetProperty("result", out var result))
             {
-                if (root.TryGetProperty("payload", out var payload) && payload.TryGetProperty("result", out var result))
+                lock (sync)
                 {
-                    lock (sync)
-                    {
-                        finalText = result.GetString() ?? finalText;
-                    }
+                    transcriptAggregator.ApplyResult(name, result.GetString() ?? string.Empty);
                 }
             }
 
@@ -270,7 +269,7 @@ public sealed class AliyunAsrProvider : IAsrProvider
             {
                 lock (sync)
                 {
-                    completed.TrySetResult(finalText);
+                    completed.TrySetResult(transcriptAggregator.GetText());
                 }
             }
 
