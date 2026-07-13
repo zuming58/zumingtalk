@@ -12,6 +12,7 @@ using Zumingtalk.Application.Shell;
 using Zumingtalk.Domain.Dictation;
 using Zumingtalk.Domain.Services;
 using Zumingtalk.Infrastructure.Audio;
+using Zumingtalk.Infrastructure.Asr;
 using Zumingtalk.Infrastructure.Storage;
 using Zumingtalk.Infrastructure.Windows;
 using Forms = System.Windows.Forms;
@@ -27,11 +28,15 @@ public partial class MainWindow : Window
     private readonly OverlayWindow overlayWindow = new();
     private readonly IGlobalHotkeyService hotkeyService = new GlobalHotkeyService();
     private readonly DispatcherTimer overlayHoldTimer = new();
+    private readonly DispatcherTimer recordingLimitTimer = new();
     private readonly Forms.NotifyIcon trayIcon = new();
     private ShellViewModel viewModel;
     private bool isRecording;
     private bool allowClose;
     private DateTimeOffset recordingStartedAt;
+    private IAsrSession? asrSession;
+    private string? activeProviderTaskId;
+    private string? startupRecognitionError;
 
     public MainWindow()
     {
@@ -49,6 +54,8 @@ public partial class MainWindow : Window
         audioRecorder.LevelChanged += OnAudioLevelChanged;
         overlayHoldTimer.Tick += OnOverlayHoldTimerTick;
         overlayHoldTimer.Interval = TimeSpan.FromMilliseconds(900);
+        recordingLimitTimer.Tick += OnRecordingLimitTimerTick;
+        recordingLimitTimer.Interval = TimeSpan.FromMinutes(10);
 
         ConfigureTrayIcon();
 
@@ -106,6 +113,7 @@ public partial class MainWindow : Window
     {
         hotkeyService.Stop();
         audioRecorder.LevelChanged -= OnAudioLevelChanged;
+        audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
         if (audioRecorder is IDisposable disposableRecorder)
         {
             disposableRecorder.Dispose();
@@ -175,8 +183,22 @@ public partial class MainWindow : Window
         try
         {
             recordingStartedAt = DateTimeOffset.Now;
+            activeProviderTaskId = null;
+            startupRecognitionError = null;
+            audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
+            try
+            {
+                var asrProvider = await CreateAsrProviderAsync();
+                asrSession = await asrProvider.StartSessionAsync(CancellationToken.None);
+                activeProviderTaskId = asrSession.ProviderTaskId;
+            }
+            catch (Exception asrError)
+            {
+                startupRecognitionError = asrError.Message;
+            }
             await audioRecorder.StartAsync(CancellationToken.None);
             isRecording = true;
+            recordingLimitTimer.Start();
             overlayHoldTimer.Stop();
             viewModel.OverlayState = DictationState.Recording;
         }
@@ -193,33 +215,52 @@ public partial class MainWindow : Window
         try
         {
             viewModel.OverlayState = DictationState.Recognizing;
+            recordingLimitTimer.Stop();
             var recording = await audioRecorder.StopAsync(CancellationToken.None);
             isRecording = false;
+            audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
+
+            var (text, retryCount, errorMessage) = await FinishRecognitionWithRetryAsync(recording.AudioPath, CancellationToken.None);
+            var succeeded = string.IsNullOrWhiteSpace(errorMessage);
+            var finalText = succeeded ? text : string.Empty;
 
             var record = new TranscriptionRecord(
                 Guid.NewGuid(),
-                TranscriptionStatus.Completed,
+                succeeded ? TranscriptionStatus.Completed : TranscriptionStatus.Failed,
                 recordingStartedAt,
                 recording.Duration,
-                "本次录音已保存，等待 M3 接入阿里云实时识别后生成转写文本。",
+                finalText,
                 recording.AudioPath,
-                "Local WAV",
-                null,
-                0,
-                0,
-                TextInsertionMethod.CopyOnly);
+                "Aliyun",
+                activeProviderTaskId,
+                retryCount,
+                finalText.Length,
+                TextInsertionMethod.CopyOnly,
+                ErrorMessage: errorMessage);
 
             await sqliteStore.UpsertAsync(record, CancellationToken.None);
-            await sqliteStore.AddFailedDurationAsync(record.Duration, CancellationToken.None);
+            if (succeeded)
+            {
+                await sqliteStore.AddCompletedAsync(record.Duration, record.CharacterCount, CancellationToken.None);
+            }
+            else
+            {
+                await sqliteStore.AddFailedDurationAsync(record.Duration, CancellationToken.None);
+            }
             await viewModel.ReloadRecordsAsync(CancellationToken.None);
 
-            viewModel.OverlayState = DictationState.Saved;
-            viewModel.Toast = new ToastViewModel("录音已保存到历史记录", ToastKind.Success);
+            viewModel.OverlayState = succeeded ? DictationState.Saved : DictationState.Failed;
+            viewModel.Toast = succeeded
+                ? new ToastViewModel("识别结果已保存到历史记录", ToastKind.Success)
+                : new ToastViewModel($"识别失败，录音已保留：{errorMessage}", ToastKind.Error);
             HoldThenHideOverlay(900);
         }
         catch (Exception ex)
         {
             isRecording = false;
+            audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
+            recordingLimitTimer.Stop();
+            await SaveFailedRecordingIfPossibleAsync(ex.Message);
             viewModel.OverlayState = DictationState.Failed;
             viewModel.Toast = new ToastViewModel($"录音保存失败：{ex.Message}", ToastKind.Error);
             HoldThenHideOverlay(1200);
@@ -231,6 +272,12 @@ public partial class MainWindow : Window
         try
         {
             await audioRecorder.CancelAsync(CancellationToken.None);
+            if (asrSession is not null)
+            {
+                await asrSession.CancelAsync(CancellationToken.None);
+                await asrSession.DisposeAsync();
+                asrSession = null;
+            }
         }
         catch (Exception ex)
         {
@@ -239,8 +286,109 @@ public partial class MainWindow : Window
         finally
         {
             isRecording = false;
+            recordingLimitTimer.Stop();
+            audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
             viewModel.OverlayState = DictationState.Idle;
         }
+    }
+
+    private async void OnPcmAudioAvailable(object? sender, PcmAudioAvailableEventArgs e)
+    {
+        var session = asrSession;
+        if (session is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await session.PushAudioAsync(e.Buffer, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            viewModel.Toast = new ToastViewModel($"实时识别推流失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
+    private async void OnRecordingLimitTimerTick(object? sender, EventArgs e)
+    {
+        recordingLimitTimer.Stop();
+        if (isRecording)
+        {
+            await FinishRecordingAsync();
+        }
+    }
+
+    private async Task<(string Text, int RetryCount, string? ErrorMessage)> FinishRecognitionWithRetryAsync(string audioPath, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(startupRecognitionError))
+        {
+            return (string.Empty, 0, startupRecognitionError);
+        }
+
+        try
+        {
+            if (asrSession is null)
+            {
+                throw new InvalidOperationException("ASR session was not started.");
+            }
+
+            var text = await asrSession.FinishAsync(cancellationToken);
+            await asrSession.DisposeAsync();
+            asrSession = null;
+            return (text, 0, null);
+        }
+        catch (Exception firstError)
+        {
+            if (asrSession is not null)
+            {
+                await asrSession.DisposeAsync();
+                asrSession = null;
+            }
+
+            try
+            {
+                var retryProvider = await CreateAsrProviderAsync();
+                var text = await retryProvider.RetranscribeAsync(audioPath, cancellationToken);
+                return (text, 1, null);
+            }
+            catch (Exception retryError)
+            {
+                return (string.Empty, 1, $"{firstError.Message}; retry failed: {retryError.Message}");
+            }
+        }
+    }
+
+    private async Task SaveFailedRecordingIfPossibleAsync(string errorMessage)
+    {
+        try
+        {
+            var record = new TranscriptionRecord(
+                Guid.NewGuid(),
+                TranscriptionStatus.Failed,
+                recordingStartedAt,
+                TimeSpan.Zero,
+                string.Empty,
+                null,
+                "Aliyun",
+                activeProviderTaskId,
+                0,
+                0,
+                TextInsertionMethod.CopyOnly,
+                ErrorMessage: errorMessage);
+            await sqliteStore.UpsertAsync(record, CancellationToken.None);
+            await viewModel.ReloadRecordsAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Last-resort failure recording must not crash the app.
+        }
+    }
+
+    private async Task<AliyunAsrProvider> CreateAsrProviderAsync()
+    {
+        var credentials = await sqliteStore.GetAliyunCredentialsAsync(CancellationToken.None);
+        return new AliyunAsrProvider(credentials);
     }
 
     private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)

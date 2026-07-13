@@ -41,6 +41,29 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
+    public async Task Recorder_EmitsPcmChunks_ForRealtimeAsrPipeline()
+    {
+        var recorder = new FakeAudioRecorder();
+        var chunks = new List<byte[]>();
+        recorder.PcmAudioAvailable += (_, e) => chunks.Add(e.Buffer);
+
+        await recorder.StartAsync(CancellationToken.None);
+
+        Assert.Single(chunks);
+        Assert.Equal([1, 2, 3, 4], chunks[0]);
+    }
+
+    [Fact]
+    public async Task AliyunProvider_FailsClearly_WhenCredentialsAreMissing()
+    {
+        var provider = new Infrastructure.Asr.AliyunAsrProvider(new Domain.Settings.AliyunCredentialSettings(string.Empty, string.Empty, string.Empty));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Contains("credentials", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void MockDataFactory_ProvidesSixConfirmedPrototypeRecords()
     {
         var records = Application.DesignTime.MockDataFactory.CreateRecords();

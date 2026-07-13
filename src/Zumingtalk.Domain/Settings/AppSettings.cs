@@ -33,4 +33,6 @@ public sealed record AppSettings(
 public sealed record AliyunCredentialSettings(
     string AppKey,
     string AccessKeyId,
-    string AccessKeySecret);
+    string AccessKeySecret,
+    string RegionId = "cn-shanghai",
+    string Endpoint = "wss://nls-gateway-cn-shanghai.aliyuncs.com/ws/v1");
