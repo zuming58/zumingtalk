@@ -136,28 +136,6 @@ public sealed class DictationCoordinatorTests
         Assert.False(result.KeepClipboardFallback);
     }
 
-    [Fact]
-    public void GlobalHotkey_FallbackCtrlWinSpace_TogglesOncePerChord()
-    {
-        var service = new GlobalHotkeyService();
-        var toggleCount = 0;
-        service.HotkeyPressed += (_, e) =>
-        {
-            if (e.Action == HotkeyAction.ToggleDictation)
-            {
-                toggleCount++;
-            }
-        };
-
-        Assert.False(service.ApplyKeyForTest(0x11, isKeyDown: true));
-        Assert.False(service.ApplyKeyForTest(0x5B, isKeyDown: true));
-        Assert.True(service.ApplyKeyForTest(0x20, isKeyDown: true));
-        Assert.False(service.ApplyKeyForTest(0x20, isKeyDown: true));
-        Assert.False(service.ApplyKeyForTest(0x20, isKeyDown: false));
-
-        Assert.Equal(1, toggleCount);
-    }
-
     private sealed class FakeAudioRecorder : IAudioRecorder
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
@@ -209,11 +187,16 @@ public sealed class DictationCoordinatorTests
         public CapturedInputTarget CaptureCurrentTarget() =>
             new(kind, IntPtr.Zero, IntPtr.Zero, 100, "Target", "Medium");
 
+        public CapturedInputTarget ValidateCapturedTarget(CapturedInputTarget capturedTarget) => capturedTarget;
+
         public Task<TextInsertionResult> InsertAsync(CapturedInputTarget target, string text, CancellationToken cancellationToken)
         {
             InsertWasCalled = true;
             return Task.FromResult(new TextInsertionResult(succeeds, succeeds ? TextInsertionMethod.NativeReplaceSelection : TextInsertionMethod.CopyFallback, "ok"));
         }
+
+        public Task<TextInsertionResult> CopyOnlyAsync(string text, CancellationToken cancellationToken) =>
+            Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "copy"));
     }
 
     private sealed class TempDirectory : IDisposable

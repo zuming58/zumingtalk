@@ -19,6 +19,7 @@ public sealed class ShellViewModel : ObservableObject
     private readonly IAsrProviderFactory? asrProviderFactory;
     private readonly IMicrophoneDeviceService? microphoneDeviceService;
     private readonly IMicrophoneTestService? microphoneTestService;
+    private readonly ITextInsertionService? textInsertionService;
     private string selectedPage = "Home";
     private TranscriptionRecordViewModel? selectedRecord;
     private TranscriptionRecordViewModel? menuRecord;
@@ -47,7 +48,8 @@ public sealed class ShellViewModel : ObservableObject
         IClipboardService? clipboardService = null,
         IAsrProviderFactory? asrProviderFactory = null,
         IMicrophoneDeviceService? microphoneDeviceService = null,
-        IMicrophoneTestService? microphoneTestService = null)
+        IMicrophoneTestService? microphoneTestService = null,
+        ITextInsertionService? textInsertionService = null)
     {
         this.historyRepository = historyRepository;
         this.statisticsRepository = statisticsRepository;
@@ -58,6 +60,7 @@ public sealed class ShellViewModel : ObservableObject
         this.asrProviderFactory = asrProviderFactory;
         this.microphoneDeviceService = microphoneDeviceService;
         this.microphoneTestService = microphoneTestService;
+        this.textInsertionService = textInsertionService;
 
         Records = MockDataFactory.CreateRecords();
         Microphones = new ObservableCollection<MicrophoneDevice>();
@@ -76,7 +79,7 @@ public sealed class ShellViewModel : ObservableObject
         RetranscribeCommand = new RelayCommand(RetranscribeRecord, parameter => ResolveRecord(parameter) is not null);
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         TestConnectionCommand = new RelayCommand(_ => _ = TestConnectionAsync());
-        TestInsertionCommand = new RelayCommand(_ => ShowToast("自动写入测试将在 M4 使用真实目标捕获", ToastKind.Info));
+        TestInsertionCommand = new RelayCommand(_ => _ = TestInsertionAsync());
         OpenRecordingsFolderCommand = new RelayCommand(OpenRecordingsFolder);
         ToggleOverlayCommand = new RelayCommand(_ => ToggleDictationDemo());
         ShowBlockedOverlayCommand = new RelayCommand(_ => OverlayState = DictationState.InsertionBlocked);
@@ -143,6 +146,57 @@ public sealed class ShellViewModel : ObservableObject
             }
         }
     }
+
+    public bool OralSmoothingEnabled
+    {
+        get => Settings.Recognition.OralSmoothingEnabled;
+        set
+        {
+            if (value == Settings.Recognition.OralSmoothingEnabled)
+            {
+                return;
+            }
+
+            Settings = Settings with { Recognition = Settings.Recognition with { OralSmoothingEnabled = value } };
+            OnPropertyChanged();
+        }
+    }
+
+    public bool FallbackHotkeyEnabled
+    {
+        get => Settings.Hotkeys.FallbackHotkeyEnabled;
+        set
+        {
+            if (value == Settings.Hotkeys.FallbackHotkeyEnabled)
+            {
+                return;
+            }
+
+            Settings = Settings with { Hotkeys = Settings.Hotkeys with { FallbackHotkeyEnabled = value } };
+            OnPropertyChanged();
+        }
+    }
+
+    public TextInsertionMethod PreferredInsertionMode
+    {
+        get => Settings.Compatibility.PreferredMode;
+        set
+        {
+            if (value == Settings.Compatibility.PreferredMode)
+            {
+                return;
+            }
+
+            Settings = Settings with { Compatibility = Settings.Compatibility with { PreferredMode = value } };
+            OnPropertyChanged();
+        }
+    }
+
+    public IReadOnlyList<TextInsertionModeOption> InsertionModeOptions { get; } =
+    [
+        new(TextInsertionMethod.Auto, "自动选择"),
+        new(TextInsertionMethod.CopyOnly, "仅复制")
+    ];
 
     public string SelectedPage
     {
@@ -244,6 +298,7 @@ public sealed class ShellViewModel : ObservableObject
         if (settingsRepository is not null)
         {
             Settings = await settingsRepository.GetAsync(cancellationToken);
+            NotifySettingsDerivedProperties();
             var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
             LoadAliyunCredentialFields(credentials);
         }
@@ -278,6 +333,13 @@ public sealed class ShellViewModel : ObservableObject
 
         SelectedMicrophone = Microphones.FirstOrDefault(device => device.DeviceNumber == Settings.Recognition.MicrophoneDeviceNumber)
             ?? Microphones.FirstOrDefault();
+    }
+
+    private void NotifySettingsDerivedProperties()
+    {
+        OnPropertyChanged(nameof(OralSmoothingEnabled));
+        OnPropertyChanged(nameof(FallbackHotkeyEnabled));
+        OnPropertyChanged(nameof(PreferredInsertionMode));
     }
 
     public async Task ReloadRecordsAsync(CancellationToken cancellationToken)
@@ -576,6 +638,35 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
+    internal async Task TestInsertionAsync()
+    {
+        if (textInsertionService is null)
+        {
+            ShowToast("自动写入服务尚未初始化", ToastKind.Error);
+            return;
+        }
+
+        try
+        {
+            const string testText = "祖名闪电说写入测试";
+            if (PreferredInsertionMode == TextInsertionMethod.CopyOnly)
+            {
+                await textInsertionService.CopyOnlyAsync(testText, CancellationToken.None);
+                ShowToast("仅复制模式已生效，测试文字已复制", ToastKind.Success);
+                return;
+            }
+
+            var target = textInsertionService.CaptureCurrentTarget();
+            target = textInsertionService.ValidateCapturedTarget(target);
+            var result = await textInsertionService.InsertAsync(target, testText, CancellationToken.None);
+            ShowToast(result.Succeeded ? "自动写入测试成功" : "自动写入未确认，测试文字已复制", result.Succeeded ? ToastKind.Success : ToastKind.Info);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"自动写入测试失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
     private async Task SaveAliyunCredentialFieldsAsync(CancellationToken cancellationToken)
     {
         if (settingsRepository is null)
@@ -595,6 +686,7 @@ public sealed class ShellViewModel : ObservableObject
 
         await settingsRepository.SaveAliyunCredentialsAsync(credentials, cancellationToken);
         Settings = await settingsRepository.GetAsync(cancellationToken);
+        NotifySettingsDerivedProperties();
         LoadAliyunCredentialFields(credentials, clearSecret: true);
     }
 
@@ -667,3 +759,5 @@ public enum ToastKind
     Success,
     Error
 }
+
+public sealed record TextInsertionModeOption(TextInsertionMethod Value, string Label);

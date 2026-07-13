@@ -48,7 +48,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         sqliteStore = new SqliteStore(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService());
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService);
         audioRecorder = new NAudioRecorder(appPaths, () => viewModel.SelectedMicrophone?.DeviceNumber ?? viewModel.Settings.Recognition.MicrophoneDeviceNumber);
 
         InitializeComponent();
@@ -95,6 +95,7 @@ public partial class MainWindow : Window
             await sqliteStore.InitializeAsync(CancellationToken.None);
             await new RetentionService(sqliteStore, appPaths).CleanupAsync(3, CancellationToken.None);
             await viewModel.InitializeAsync(CancellationToken.None);
+            hotkeyService.SetFallbackHotkeyEnabled(viewModel.Settings.Hotkeys.FallbackHotkeyEnabled);
         }
         catch (Exception ex)
         {
@@ -227,7 +228,14 @@ public partial class MainWindow : Window
             var insertionMethod = TextInsertionMethod.CopyOnly;
             var inserted = false;
             var insertionBlocked = false;
-            if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
+            if (succeeded && !string.IsNullOrWhiteSpace(finalText) &&
+                viewModel.Settings.Compatibility.PreferredMode == TextInsertionMethod.CopyOnly)
+            {
+                var insertion = await textInsertionService.CopyOnlyAsync(finalText, CancellationToken.None);
+                insertionMethod = insertion.Method;
+                insertionBlocked = true;
+            }
+            else if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
             {
                 var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText);
                 insertionMethod = insertion.Method;
@@ -325,6 +333,12 @@ public partial class MainWindow : Window
 
     private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText)
     {
+        target = textInsertionService.ValidateCapturedTarget(target);
+        if (target.Kind == InputTargetKind.Lost)
+        {
+            return await textInsertionService.InsertAsync(target, finalText, CancellationToken.None);
+        }
+
         if (target.Kind != InputTargetKind.Editable)
         {
             return new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "No editable target; history only.");
@@ -486,6 +500,10 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(ShellViewModel.OverlayState))
         {
             SyncOverlayWindow();
+        }
+        else if (e.PropertyName == nameof(ShellViewModel.Settings) || e.PropertyName == nameof(ShellViewModel.FallbackHotkeyEnabled))
+        {
+            hotkeyService.SetFallbackHotkeyEnabled(viewModel.Settings.Hotkeys.FallbackHotkeyEnabled);
         }
     }
 

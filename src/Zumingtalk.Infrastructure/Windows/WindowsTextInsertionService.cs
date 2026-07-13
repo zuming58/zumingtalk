@@ -51,7 +51,13 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (target.Kind != InputTargetKind.Editable || target.FocusHandle == IntPtr.Zero || !IsWindow(target.FocusHandle))
+        if (target.Kind == InputTargetKind.Lost || target.FocusHandle == IntPtr.Zero || !IsWindow(target.FocusHandle))
+        {
+            Clipboard.SetText(text);
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Captured target was lost; text copied."));
+        }
+
+        if (target.Kind != InputTargetKind.Editable)
         {
             return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "No editable target was captured."));
         }
@@ -92,6 +98,39 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         Clipboard.SetText(text);
         return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Automatic insertion was not verified; text copied."));
+    }
+
+    public Task<TextInsertionResult> CopyOnlyAsync(string text, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Clipboard.SetText(text);
+        return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "Copy-only mode; text copied."));
+    }
+
+    public CapturedInputTarget ValidateCapturedTarget(CapturedInputTarget capturedTarget)
+    {
+        if (capturedTarget.Kind != InputTargetKind.Editable ||
+            capturedTarget.WindowHandle == IntPtr.Zero ||
+            capturedTarget.FocusHandle == IntPtr.Zero ||
+            !IsWindow(capturedTarget.WindowHandle) ||
+            !IsWindow(capturedTarget.FocusHandle))
+        {
+            return capturedTarget with { Kind = InputTargetKind.Lost };
+        }
+
+        var foreground = GetForegroundWindow();
+        if (foreground != capturedTarget.WindowHandle)
+        {
+            return capturedTarget with { Kind = InputTargetKind.Lost };
+        }
+
+        _ = GetWindowThreadProcessId(capturedTarget.WindowHandle, out var processId);
+        if ((int)processId != capturedTarget.ProcessId)
+        {
+            return capturedTarget with { Kind = InputTargetKind.Lost };
+        }
+
+        return capturedTarget;
     }
 
     internal static PasteAttemptResult EvaluatePasteAttempt(int beforeLength, int afterLength, string methodName)

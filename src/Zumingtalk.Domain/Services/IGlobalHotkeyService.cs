@@ -6,6 +6,8 @@ public interface IGlobalHotkeyService
 
     void Start();
 
+    void SetFallbackHotkeyEnabled(bool enabled);
+
     void Stop();
 }
 

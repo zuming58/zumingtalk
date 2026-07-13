@@ -133,6 +133,27 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_PersistsCompatibilityAndHotkeySettings()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths);
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.OralSmoothingEnabled = false;
+        viewModel.FallbackHotkeyEnabled = false;
+        viewModel.PreferredInsertionMode = TextInsertionMethod.CopyOnly;
+
+        await viewModel.SaveSettingsAsync();
+
+        var settings = await ((Domain.Services.ISettingsRepository)store).GetAsync(CancellationToken.None);
+        Assert.False(settings.Recognition.OralSmoothingEnabled);
+        Assert.False(settings.Hotkeys.FallbackHotkeyEnabled);
+        Assert.Equal(TextInsertionMethod.CopyOnly, settings.Compatibility.PreferredMode);
+    }
+
+    [Fact]
     public async Task ShellViewModel_Retranscribe_UpdatesExistingRecordWithAliyunResult()
     {
         using var temp = new TempDirectory();

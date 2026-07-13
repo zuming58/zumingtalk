@@ -385,7 +385,9 @@
                                     </Border>
                                     <TextBlock Grid.Column="2" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" Text="正常" />
                                 </Grid>
-                                <TextBlock FontSize="13" Text="口语顺滑（过滤语气词和连续重复）  开启" />
+                                <CheckBox FontSize="13"
+                                          IsChecked="{Binding OralSmoothingEnabled, Mode=TwoWay}"
+                                          Content="口语顺滑（过滤语气词和连续重复）" />
                             </StackPanel>
                         </Border>
 
@@ -436,7 +438,9 @@
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="固定备用热键" />
                                             <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="右 Alt 被 360 等安全软件拦截时使用 Ctrl + Win + Space。" />
                                         </StackPanel>
-                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="已启用" />
+                                        <CheckBox HorizontalAlignment="Right"
+                                                  VerticalAlignment="Center"
+                                                  IsChecked="{Binding FallbackHotkeyEnabled, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -446,14 +450,13 @@
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="写入模式" />
                                             <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="自动选择原生插入、粘贴消息或输入模拟。" />
                                         </StackPanel>
-                                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                                            <Border Padding="14,8" Background="White" CornerRadius="7">
-                                                <TextBlock Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" Text="自动选择" />
-                                            </Border>
-                                            <Border Padding="14,8" Background="#F1F5FB" CornerRadius="7">
-                                                <TextBlock Text="仅复制" />
-                                            </Border>
-                                        </StackPanel>
+                                        <ComboBox Width="140"
+                                                  Height="38"
+                                                  HorizontalAlignment="Right"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedValuePath="Value"
+                                                  ItemsSource="{Binding InsertionModeOptions}"
+                                                  SelectedValue="{Binding PreferredInsertionMode, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <StackPanel Orientation="Horizontal">

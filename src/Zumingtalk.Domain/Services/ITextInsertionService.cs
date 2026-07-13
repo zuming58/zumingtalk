@@ -6,7 +6,11 @@ public interface ITextInsertionService
 {
     CapturedInputTarget CaptureCurrentTarget();
 
+    CapturedInputTarget ValidateCapturedTarget(CapturedInputTarget capturedTarget);
+
     Task<TextInsertionResult> InsertAsync(CapturedInputTarget target, string text, CancellationToken cancellationToken);
+
+    Task<TextInsertionResult> CopyOnlyAsync(string text, CancellationToken cancellationToken);
 }
 
 public sealed record CapturedInputTarget(

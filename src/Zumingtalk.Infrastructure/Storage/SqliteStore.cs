@@ -221,18 +221,28 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         var credentials = await credentialsTask;
         var microphoneName = await GetSettingAsync("microphone_name", cancellationToken) ?? "系统默认麦克风";
         var microphoneDeviceNumberText = await GetSettingAsync("microphone_device_number", cancellationToken) ?? "0";
+        var oralSmoothingText = await GetSettingAsync("oral_smoothing", cancellationToken) ?? "true";
+        var fallbackHotkeyText = await GetSettingAsync("fallback_hotkey_enabled", cancellationToken) ?? "true";
+        var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
+        _ = bool.TryParse(oralSmoothingText, out var oralSmoothingEnabled);
+        _ = bool.TryParse(fallbackHotkeyText, out var fallbackHotkeyEnabled);
+        if (!Enum.TryParse<TextInsertionMethod>(insertionModeText, out var preferredMode))
+        {
+            preferredMode = TextInsertionMethod.Auto;
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         return new AppSettings(
             new RecognitionSettings(
                 "阿里云智能语音交互",
                 Mask(credentials.AppKey),
                 Mask(credentials.AccessKeyId),
-                OralSmoothingEnabled: true,
+                OralSmoothingEnabled: oralSmoothingEnabled,
                 MicrophoneName: microphoneName,
                 MicrophoneDeviceNumber: microphoneDeviceNumber),
-            new HotkeySettings("右 Alt", FallbackHotkeyEnabled: true, "Ctrl + Win + Space"),
-            new CompatibilitySettings("尚未捕获", TextInsertionMethod.Auto, false, TextInsertionMethod.Auto),
+            new HotkeySettings("右 Alt", fallbackHotkeyEnabled, "Ctrl + Win + Space"),
+            new CompatibilitySettings("尚未捕获", TextInsertionMethod.Auto, false, preferredMode),
             new LocalDataSettings(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zumingtalk", "recordings"), 3));
     }
 
