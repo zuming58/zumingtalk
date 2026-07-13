@@ -15,7 +15,9 @@ public sealed record CapturedInputTarget(
     IntPtr FocusHandle,
     int ProcessId,
     string ProcessName,
-    string IntegrityLevel);
+    string IntegrityLevel,
+    string ClassName = "",
+    bool IsElevated = false);
 
 public sealed record TextInsertionResult(
     bool Succeeded,

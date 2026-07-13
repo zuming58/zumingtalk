@@ -37,6 +37,8 @@ public partial class MainWindow : Window
     private IAsrSession? asrSession;
     private string? activeProviderTaskId;
     private string? startupRecognitionError;
+    private readonly ITextInsertionService textInsertionService = new WindowsTextInsertionService();
+    private CapturedInputTarget? capturedTarget;
 
     public MainWindow()
     {
@@ -185,6 +187,7 @@ public partial class MainWindow : Window
             recordingStartedAt = DateTimeOffset.Now;
             activeProviderTaskId = null;
             startupRecognitionError = null;
+            capturedTarget = textInsertionService.CaptureCurrentTarget();
             audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
             try
             {
@@ -223,6 +226,14 @@ public partial class MainWindow : Window
             var (text, retryCount, errorMessage) = await FinishRecognitionWithRetryAsync(recording.AudioPath, CancellationToken.None);
             var succeeded = string.IsNullOrWhiteSpace(errorMessage);
             var finalText = succeeded ? text : string.Empty;
+            var insertionMethod = TextInsertionMethod.CopyOnly;
+            var inserted = false;
+            if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
+            {
+                var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText);
+                insertionMethod = insertion.Method;
+                inserted = insertion.Succeeded;
+            }
 
             var record = new TranscriptionRecord(
                 Guid.NewGuid(),
@@ -235,7 +246,7 @@ public partial class MainWindow : Window
                 activeProviderTaskId,
                 retryCount,
                 finalText.Length,
-                TextInsertionMethod.CopyOnly,
+                insertionMethod,
                 ErrorMessage: errorMessage);
 
             await sqliteStore.UpsertAsync(record, CancellationToken.None);
@@ -249,9 +260,11 @@ public partial class MainWindow : Window
             }
             await viewModel.ReloadRecordsAsync(CancellationToken.None);
 
-            viewModel.OverlayState = succeeded ? DictationState.Saved : DictationState.Failed;
+            viewModel.OverlayState = succeeded
+                ? (inserted ? DictationState.Completed : DictationState.Saved)
+                : DictationState.Failed;
             viewModel.Toast = succeeded
-                ? new ToastViewModel("识别结果已保存到历史记录", ToastKind.Success)
+                ? new ToastViewModel(inserted ? "识别结果已写入并保存" : "识别结果已保存到历史记录", ToastKind.Success)
                 : new ToastViewModel($"识别失败，录音已保留：{errorMessage}", ToastKind.Error);
             HoldThenHideOverlay(900);
         }
@@ -289,7 +302,25 @@ public partial class MainWindow : Window
             recordingLimitTimer.Stop();
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
             viewModel.OverlayState = DictationState.Idle;
+            capturedTarget = null;
         }
+    }
+
+    private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText)
+    {
+        if (target.Kind != InputTargetKind.Editable)
+        {
+            return new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "No editable target; history only.");
+        }
+
+        var result = await textInsertionService.InsertAsync(target, finalText, CancellationToken.None);
+        if (!result.Succeeded && result.Method == TextInsertionMethod.CopyFallback)
+        {
+            viewModel.OverlayState = DictationState.InsertionBlocked;
+            viewModel.Toast = new ToastViewModel("未能自动写入，文字已复制", ToastKind.Info);
+        }
+
+        return result;
     }
 
     private async void OnPcmAudioAvailable(object? sender, PcmAudioAvailableEventArgs e)
