@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -480,9 +481,56 @@ public partial class MainWindow : Window
 
     private void PositionOverlay()
     {
-        var workArea = SystemParameters.WorkArea;
+        var workArea = GetForegroundMonitorWorkArea();
         overlayWindow.Left = workArea.Left + (workArea.Width - overlayWindow.Width) / 2;
         overlayWindow.Top = workArea.Bottom - overlayWindow.Height - 12;
+    }
+
+    private static Rect GetForegroundMonitorWorkArea()
+    {
+        var foreground = GetForegroundWindow();
+        var monitor = MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
+        {
+            return new Rect(
+                info.rcWork.Left,
+                info.rcWork.Top,
+                info.rcWork.Right - info.rcWork.Left,
+                info.rcWork.Bottom - info.rcWork.Top);
+        }
+
+        return SystemParameters.WorkArea;
+    }
+
+    private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 }
 
