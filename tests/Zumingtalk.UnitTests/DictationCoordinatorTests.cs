@@ -128,6 +128,35 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
+    public void TextInsertion_LostTarget_DoesNotUseCopyFallback()
+    {
+        var result = WindowsTextInsertionService.CreateLostTargetResult();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.Auto, result.Method);
+        Assert.Contains("history only", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TranscriptionRecordViewModel_GroupsYesterdaySeparately()
+    {
+        var record = new TranscriptionRecord(
+            Guid.NewGuid(),
+            TranscriptionStatus.Completed,
+            DateTimeOffset.Now.Date.AddDays(-1).AddHours(9),
+            TimeSpan.FromSeconds(1),
+            "text",
+            null,
+            "Aliyun",
+            null,
+            0,
+            4);
+        var viewModel = new Application.DesignTime.TranscriptionRecordViewModel(record, false);
+
+        Assert.Equal("昨天", viewModel.DateGroupText);
+    }
+
+    [Fact]
     public void TextInsertion_LengthIncrease_IsVerified()
     {
         var result = WindowsTextInsertionService.EvaluatePasteAttempt(4, 8, "WM_PASTE");

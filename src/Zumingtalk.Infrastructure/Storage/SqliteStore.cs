@@ -168,8 +168,9 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         var totalDuration = await GetStatAsync("total_duration_ms", cancellationToken);
         var totalCharacters = await GetStatAsync("total_characters", cancellationToken);
         var successfulDuration = await GetStatAsync("successful_duration_ms", cancellationToken);
-        var minutes = Math.Max(1, TimeSpan.FromMilliseconds(successfulDuration).TotalMinutes);
-        return new DictationStatistics(TimeSpan.FromMilliseconds(totalDuration), (int)totalCharacters, (int)Math.Round(totalCharacters / minutes));
+        var minutes = TimeSpan.FromMilliseconds(successfulDuration).TotalMinutes;
+        var averageSpeed = minutes <= 0 ? 0 : (int)Math.Round(totalCharacters / minutes);
+        return new DictationStatistics(TimeSpan.FromMilliseconds(totalDuration), (int)totalCharacters, averageSpeed);
     }
 
     public async Task AddCompletedAsync(TimeSpan duration, int characterCount, CancellationToken cancellationToken)
@@ -181,6 +182,13 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
 
     public Task AddFailedDurationAsync(TimeSpan duration, CancellationToken cancellationToken) =>
         AddStatAsync("total_duration_ms", (long)duration.TotalMilliseconds, cancellationToken);
+
+    public async Task AdjustCompletedAsync(TimeSpan totalDurationDelta, TimeSpan successfulDurationDelta, int characterCountDelta, CancellationToken cancellationToken)
+    {
+        await AddStatAsync("total_duration_ms", (long)totalDurationDelta.TotalMilliseconds, cancellationToken);
+        await AddStatAsync("successful_duration_ms", (long)successfulDurationDelta.TotalMilliseconds, cancellationToken);
+        await AddStatAsync("total_characters", characterCountDelta, cancellationToken);
+    }
 
     Task<AppSettings> ISettingsRepository.GetAsync(CancellationToken cancellationToken)
     {

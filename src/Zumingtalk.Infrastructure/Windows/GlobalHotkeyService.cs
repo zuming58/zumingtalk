@@ -27,6 +27,8 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
     private bool rightAltDown;
     private bool fallbackHotkeyEnabled = true;
     private bool fallbackHotkeyRegistered;
+    private int? primaryHookError;
+    private int? fallbackHotkeyError;
 
     public GlobalHotkeyService()
     {
@@ -36,15 +38,25 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
     public event EventHandler<HotkeyPressedEventArgs>? HotkeyPressed;
 
+    public event EventHandler<HotkeyRegistrationStatus>? RegistrationStatusChanged;
+
+    public HotkeyRegistrationStatus RegistrationStatus => new(
+        hookId != IntPtr.Zero,
+        fallbackHotkeyEnabled,
+        fallbackHotkeyRegistered,
+        primaryHookError,
+        fallbackHotkeyError);
+
     public void Start()
     {
-        if (hookId != IntPtr.Zero)
+        if (hookId == IntPtr.Zero)
         {
-            return;
+            hookId = SetHook(callback);
+            primaryHookError = hookId == IntPtr.Zero ? Marshal.GetLastWin32Error() : null;
         }
 
-        hookId = SetHook(callback);
         SyncFallbackHotkeyRegistration();
+        NotifyRegistrationStatusChanged();
     }
 
     public void SetFallbackHotkeyEnabled(bool enabled)
@@ -55,12 +67,11 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
     public void Stop()
     {
-        if (hookId == IntPtr.Zero)
+        if (hookId != IntPtr.Zero)
         {
-            return;
+            UnhookWindowsHookEx(hookId);
         }
 
-        UnhookWindowsHookEx(hookId);
         if (fallbackHotkeyRegistered)
         {
             UnregisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID);
@@ -69,6 +80,7 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
         hookId = IntPtr.Zero;
         rightAltDown = false;
+        NotifyRegistrationStatusChanged();
     }
 
     public void Dispose()
@@ -86,20 +98,32 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
     private void SyncFallbackHotkeyRegistration()
     {
-        if (hookId == IntPtr.Zero)
-        {
-            return;
-        }
-
         if (fallbackHotkeyEnabled && !fallbackHotkeyRegistered)
         {
             fallbackHotkeyRegistered = RegisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID, MOD_CONTROL | MOD_WIN | MOD_NOREPEAT, VK_SPACE);
+            fallbackHotkeyError = fallbackHotkeyRegistered ? null : Marshal.GetLastWin32Error();
+        }
+        else if (fallbackHotkeyEnabled && fallbackHotkeyRegistered)
+        {
+            fallbackHotkeyError = null;
         }
         else if (!fallbackHotkeyEnabled && fallbackHotkeyRegistered)
         {
             UnregisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID);
             fallbackHotkeyRegistered = false;
+            fallbackHotkeyError = null;
         }
+        else if (!fallbackHotkeyEnabled)
+        {
+            fallbackHotkeyError = null;
+        }
+
+        NotifyRegistrationStatusChanged();
+    }
+
+    private void NotifyRegistrationStatusChanged()
+    {
+        RegistrationStatusChanged?.Invoke(this, RegistrationStatus);
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)

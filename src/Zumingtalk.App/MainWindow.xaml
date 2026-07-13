@@ -259,7 +259,11 @@
                         <Button Margin="18,0,0,0" Style="{StaticResource IconButtonStyle}" ToolTip="打开录音文件夹" Command="{Binding OpenRecordingsFolderCommand}">
                             <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE8B7;" />
                         </Button>
-                        <Button Margin="10,0,0,0" Style="{StaticResource IconButtonStyle}" ToolTip="回到顶部" Click="OnScrollHomeToTop">
+                        <Button Margin="10,0,0,0"
+                                Style="{StaticResource IconButtonStyle}"
+                                ToolTip="回到顶部"
+                                Click="OnScrollHomeToTop"
+                                Visibility="{Binding IsBackToTopVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE74A;" />
                         </Button>
                     </StackPanel>
@@ -276,7 +280,7 @@
                     </StackPanel>
                 </Grid>
 
-                <ScrollViewer x:Name="HomeRecordsScrollViewer" Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer x:Name="HomeRecordsScrollViewer" Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto" ScrollChanged="OnHomeRecordsScrollChanged">
                     <ItemsControl ItemTemplate="{StaticResource RecordCardTemplate}" ItemsSource="{Binding Source={StaticResource GroupedRecords}}">
                         <ItemsControl.GroupStyle>
                             <GroupStyle>
@@ -437,7 +441,7 @@
                                         <StackPanel>
                                             <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="主快捷键" />
                                             <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding Settings.Hotkeys.PrimaryHotkey}" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource SuccessBrush}" Text="可用" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding PrimaryHotkeyStatusText}" />
                                         </StackPanel>
                                     </Border>
                                     <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
@@ -461,6 +465,7 @@
                                         <StackPanel>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="固定备用热键" />
                                             <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="右 Alt 被 360 等安全软件拦截时使用 Ctrl + Win + Space。" />
+                                            <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding FallbackHotkeyStatusText}" />
                                         </StackPanel>
                                         <CheckBox HorizontalAlignment="Right"
                                                   VerticalAlignment="Center"

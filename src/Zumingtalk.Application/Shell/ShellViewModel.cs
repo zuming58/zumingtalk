@@ -33,6 +33,9 @@ public sealed class ShellViewModel : ObservableObject
     private string aliyunAppKey = string.Empty;
     private string aliyunAccessKeyId = string.Empty;
     private string aliyunAccessKeySecret = string.Empty;
+    private string primaryHotkeyStatusText = "未启动";
+    private string fallbackHotkeyStatusText = "未启动";
+    private bool isBackToTopVisible;
     private MicrophoneDevice? selectedMicrophone;
 
     public ShellViewModel()
@@ -262,6 +265,24 @@ public sealed class ShellViewModel : ObservableObject
 
     public string TodayText => DateTimeOffset.Now.ToString("yyyy-MM-dd");
 
+    public string PrimaryHotkeyStatusText
+    {
+        get => primaryHotkeyStatusText;
+        private set => SetProperty(ref primaryHotkeyStatusText, value);
+    }
+
+    public string FallbackHotkeyStatusText
+    {
+        get => fallbackHotkeyStatusText;
+        private set => SetProperty(ref fallbackHotkeyStatusText, value);
+    }
+
+    public bool IsBackToTopVisible
+    {
+        get => isBackToTopVisible;
+        set => SetProperty(ref isBackToTopVisible, value);
+    }
+
     public RelayCommand ShowHomeCommand { get; }
 
     public RelayCommand ShowSettingsCommand { get; }
@@ -397,6 +418,13 @@ public sealed class ShellViewModel : ObservableObject
             };
 
             await historyRepository.UpsertAsync(updated, cancellationToken);
+            if (statisticsRepository is not null)
+            {
+                var successfulDurationDelta = record.Status == TranscriptionStatus.Completed ? TimeSpan.Zero : record.Duration;
+                var characterCountDelta = record.Status == TranscriptionStatus.Completed ? updated.CharacterCount - record.CharacterCount : updated.CharacterCount;
+                await statisticsRepository.AdjustCompletedAsync(TimeSpan.Zero, successfulDurationDelta, characterCountDelta, cancellationToken);
+            }
+
             await ReloadRecordsAsync(cancellationToken);
             SelectedRecord = Records.FirstOrDefault(item => item.Record.Id == updated.Id);
             ShowToast("重新转写已完成", ToastKind.Success);
@@ -778,6 +806,22 @@ public sealed class ShellViewModel : ObservableObject
     {
         Toast = new ToastViewModel(message, kind, showUndo);
     }
+
+    public void UpdateHotkeyRegistrationStatus(HotkeyRegistrationStatus status)
+    {
+        PrimaryHotkeyStatusText = status.PrimaryHookActive
+            ? "右 Alt 已注册"
+            : $"右 Alt 未注册{FormatWin32Error(status.PrimaryHookError)}";
+
+        FallbackHotkeyStatusText = !status.FallbackHotkeyEnabled
+            ? "备用热键已关闭"
+            : status.FallbackHotkeyRegistered
+                ? $"{Settings.Hotkeys.FallbackHotkey} 已注册"
+                : $"{Settings.Hotkeys.FallbackHotkey} 未注册{FormatWin32Error(status.FallbackHotkeyError)}";
+    }
+
+    private static string FormatWin32Error(int? errorCode) =>
+        errorCode is null or 0 ? string.Empty : $"（Win32 {errorCode}）";
 }
 
 public sealed record ToastViewModel(string Message, ToastKind Kind, bool ShowUndo = false);

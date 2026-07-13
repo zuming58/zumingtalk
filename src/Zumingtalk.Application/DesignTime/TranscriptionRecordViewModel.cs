@@ -35,7 +35,9 @@ public sealed class TranscriptionRecordViewModel : ObservableObject
 
     public string DateGroupText => Record.StartedAt.Date == DateTimeOffset.Now.Date
         ? "今天"
-        : Record.StartedAt.ToString("yyyy-MM-dd");
+        : Record.StartedAt.Date == DateTimeOffset.Now.Date.AddDays(-1)
+            ? "昨天"
+            : Record.StartedAt.ToString("yyyy-MM-dd");
 
     public string Provider => Record.Provider;
 

@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     private Task? asrStartupTask;
     private readonly ConcurrentQueue<byte[]> pendingPcmChunks = new();
     private readonly SemaphoreSlim asrSendLock = new(1, 1);
+    private CancellationTokenSource? activeDictationCts;
+    private int activeDictationId;
     private string? activeProviderTaskId;
     private string? startupRecognitionError;
     private readonly ITextInsertionService textInsertionService = new WindowsTextInsertionService();
@@ -58,6 +60,7 @@ public partial class MainWindow : Window
 
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         hotkeyService.HotkeyPressed += OnHotkeyPressed;
+        hotkeyService.RegistrationStatusChanged += OnHotkeyRegistrationStatusChanged;
         audioRecorder.LevelChanged += OnAudioLevelChanged;
         overlayHoldTimer.Tick += OnOverlayHoldTimerTick;
         overlayHoldTimer.Interval = TimeSpan.FromMilliseconds(900);
@@ -103,6 +106,7 @@ public partial class MainWindow : Window
         }
 
         hotkeyService.Start();
+        viewModel.UpdateHotkeyRegistrationStatus(hotkeyService.RegistrationStatus);
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -120,6 +124,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         hotkeyService.Stop();
+        hotkeyService.RegistrationStatusChanged -= OnHotkeyRegistrationStatusChanged;
         audioRecorder.LevelChanged -= OnAudioLevelChanged;
         audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
         if (audioRecorder is IDisposable disposableRecorder)
@@ -189,23 +194,36 @@ public partial class MainWindow : Window
 
     private async Task StartRecordingAsync()
     {
+        var dictationCts = new CancellationTokenSource();
+        var dictationId = Interlocked.Increment(ref activeDictationId);
         try
         {
+            activeDictationCts = dictationCts;
             recordingStartedAt = DateTimeOffset.Now;
             activeProviderTaskId = null;
             startupRecognitionError = null;
+            asrSession = null;
+            asrStartupTask = null;
             capturedTarget = textInsertionService.CaptureCurrentTarget();
             pendingPcmChunks.Clear();
             audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
-            await audioRecorder.StartAsync(CancellationToken.None);
+            await audioRecorder.StartAsync(dictationCts.Token);
             isRecording = true;
             recordingLimitTimer.Start();
             overlayHoldTimer.Stop();
             viewModel.OverlayState = DictationState.Recording;
-            asrStartupTask = StartAsrSessionAsync(CancellationToken.None);
+            asrStartupTask = StartAsrSessionAsync(dictationId, dictationCts.Token);
         }
         catch (Exception ex)
         {
+            audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
+            dictationCts.Cancel();
+            dictationCts.Dispose();
+            if (ReferenceEquals(activeDictationCts, dictationCts))
+            {
+                activeDictationCts = null;
+            }
+
             viewModel.OverlayState = DictationState.Failed;
             viewModel.Toast = new ToastViewModel($"麦克风录音启动失败：{ex.Message}", ToastKind.Error);
             HoldThenHideOverlay(1200);
@@ -214,15 +232,18 @@ public partial class MainWindow : Window
 
     private async Task FinishRecordingAsync()
     {
+        var dictationCts = activeDictationCts;
+        var dictationId = activeDictationId;
+        var cancellationToken = dictationCts?.Token ?? CancellationToken.None;
         try
         {
             viewModel.OverlayState = DictationState.Recognizing;
             recordingLimitTimer.Stop();
-            var recording = await audioRecorder.StopAsync(CancellationToken.None);
+            var recording = await audioRecorder.StopAsync(cancellationToken);
             isRecording = false;
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
 
-            var (text, retryCount, errorMessage) = await FinishRecognitionWithRetryAsync(recording.AudioPath, CancellationToken.None);
+            var (text, retryCount, errorMessage) = await FinishRecognitionWithRetryAsync(dictationId, recording.AudioPath, cancellationToken);
             var succeeded = string.IsNullOrWhiteSpace(errorMessage);
             var finalText = succeeded ? text : string.Empty;
             var insertionMethod = TextInsertionMethod.CopyOnly;
@@ -231,13 +252,13 @@ public partial class MainWindow : Window
             if (succeeded && !string.IsNullOrWhiteSpace(finalText) &&
                 viewModel.Settings.Compatibility.PreferredMode == TextInsertionMethod.CopyOnly)
             {
-                var insertion = await textInsertionService.CopyOnlyAsync(finalText, CancellationToken.None);
+                var insertion = await textInsertionService.CopyOnlyAsync(finalText, cancellationToken);
                 insertionMethod = insertion.Method;
                 insertionBlocked = true;
             }
             else if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
             {
-                var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText);
+                var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText, cancellationToken);
                 insertionMethod = insertion.Method;
                 inserted = insertion.Succeeded;
                 insertionBlocked = !insertion.Succeeded && insertion.Method == TextInsertionMethod.CopyFallback;
@@ -281,18 +302,36 @@ public partial class MainWindow : Window
             isRecording = false;
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
             recordingLimitTimer.Stop();
+            if (asrSession is not null)
+            {
+                await asrSession.CancelAsync(CancellationToken.None);
+                await asrSession.DisposeAsync();
+                asrSession = null;
+            }
+
             await SaveFailedRecordingIfPossibleAsync(ex.Message);
             viewModel.OverlayState = DictationState.Failed;
             viewModel.Toast = new ToastViewModel($"录音保存失败：{ex.Message}", ToastKind.Error);
             HoldThenHideOverlay(1200);
         }
+        finally
+        {
+            DisposeActiveDictationCts(dictationCts);
+        }
     }
 
     private async Task CancelRecordingAsync()
     {
+        var dictationCts = activeDictationCts;
+        dictationCts?.Cancel();
         try
         {
             await audioRecorder.CancelAsync(CancellationToken.None);
+            if (asrStartupTask is not null)
+            {
+                await asrStartupTask;
+            }
+
             if (asrSession is not null)
             {
                 await asrSession.CancelAsync(CancellationToken.None);
@@ -309,34 +348,48 @@ public partial class MainWindow : Window
             isRecording = false;
             recordingLimitTimer.Stop();
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
-            asrStartupTask = null;
+            pendingPcmChunks.Clear();
             viewModel.OverlayState = DictationState.Idle;
             capturedTarget = null;
+            DisposeActiveDictationCts(dictationCts);
         }
     }
 
-    private async Task StartAsrSessionAsync(CancellationToken cancellationToken)
+    private async Task StartAsrSessionAsync(int dictationId, CancellationToken cancellationToken)
     {
         try
         {
             var asrProvider = await CreateAsrProviderAsync();
             var session = await asrProvider.StartSessionAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested || dictationId != activeDictationId)
+            {
+                await session.CancelAsync(CancellationToken.None);
+                await session.DisposeAsync();
+                return;
+            }
+
             asrSession = session;
             activeProviderTaskId = session.ProviderTaskId;
-            await FlushPendingPcmAsync(cancellationToken);
+            await FlushPendingPcmAsync(dictationId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception asrError)
         {
-            startupRecognitionError = asrError.Message;
+            if (!cancellationToken.IsCancellationRequested && dictationId == activeDictationId)
+            {
+                startupRecognitionError = asrError.Message;
+            }
         }
     }
 
-    private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText)
+    private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText, CancellationToken cancellationToken)
     {
         target = textInsertionService.ValidateCapturedTarget(target);
         if (target.Kind == InputTargetKind.Lost)
         {
-            return await textInsertionService.InsertAsync(target, finalText, CancellationToken.None);
+            return new TextInsertionResult(false, TextInsertionMethod.Auto, "Captured target was lost; history only.");
         }
 
         if (target.Kind != InputTargetKind.Editable)
@@ -344,7 +397,7 @@ public partial class MainWindow : Window
             return new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "No editable target; history only.");
         }
 
-        var result = await textInsertionService.InsertAsync(target, finalText, CancellationToken.None);
+        var result = await textInsertionService.InsertAsync(target, finalText, cancellationToken);
         if (!result.Succeeded && result.Method == TextInsertionMethod.CopyFallback)
         {
             viewModel.OverlayState = DictationState.InsertionBlocked;
@@ -357,13 +410,17 @@ public partial class MainWindow : Window
     private void OnPcmAudioAvailable(object? sender, PcmAudioAvailableEventArgs e)
     {
         pendingPcmChunks.Enqueue(e.Buffer);
-        _ = FlushPendingPcmAsync(CancellationToken.None);
+        var dictationCts = activeDictationCts;
+        if (dictationCts is not null)
+        {
+            _ = FlushPendingPcmAsync(activeDictationId, dictationCts.Token);
+        }
     }
 
-    private async Task FlushPendingPcmAsync(CancellationToken cancellationToken)
+    private async Task FlushPendingPcmAsync(int dictationId, CancellationToken cancellationToken)
     {
         var session = asrSession;
-        if (session is null)
+        if (session is null || dictationId != activeDictationId)
         {
             return;
         }
@@ -371,15 +428,32 @@ public partial class MainWindow : Window
         await asrSendLock.WaitAsync(cancellationToken);
         try
         {
+            if (dictationId != activeDictationId || !ReferenceEquals(session, asrSession))
+            {
+                return;
+            }
+
             while (pendingPcmChunks.TryDequeue(out var chunk))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (dictationId != activeDictationId)
+                {
+                    return;
+                }
+
                 await session.PushAudioAsync(chunk, cancellationToken);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
-            startupRecognitionError ??= $"实时识别推流失败：{ex.Message}";
-            viewModel.Toast = new ToastViewModel(startupRecognitionError, ToastKind.Error);
+            if (dictationId == activeDictationId)
+            {
+                startupRecognitionError ??= $"实时识别推流失败：{ex.Message}";
+                viewModel.Toast = new ToastViewModel(startupRecognitionError, ToastKind.Error);
+            }
         }
         finally
         {
@@ -396,13 +470,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<(string Text, int RetryCount, string? ErrorMessage)> FinishRecognitionWithRetryAsync(string audioPath, CancellationToken cancellationToken)
+    private async Task<(string Text, int RetryCount, string? ErrorMessage)> FinishRecognitionWithRetryAsync(int dictationId, string audioPath, CancellationToken cancellationToken)
     {
         try
         {
             if (asrStartupTask is not null)
             {
                 await asrStartupTask;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (dictationId != activeDictationId)
+            {
+                throw new OperationCanceledException("Dictation session was superseded.", cancellationToken);
             }
 
             if (!string.IsNullOrWhiteSpace(startupRecognitionError))
@@ -415,11 +495,22 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("ASR session was not started.");
             }
 
-            await FlushPendingPcmAsync(cancellationToken);
+            await FlushPendingPcmAsync(dictationId, cancellationToken);
             var text = await asrSession.FinishAsync(cancellationToken);
             await asrSession.DisposeAsync();
             asrSession = null;
             return (text, 0, null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (asrSession is not null)
+            {
+                await asrSession.CancelAsync(CancellationToken.None);
+                await asrSession.DisposeAsync();
+                asrSession = null;
+            }
+
+            throw;
         }
         catch (Exception firstError)
         {
@@ -507,6 +598,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnHotkeyRegistrationStatusChanged(object? sender, HotkeyRegistrationStatus e)
+    {
+        Dispatcher.Invoke(() => viewModel.UpdateHotkeyRegistrationStatus(e));
+    }
+
     private void OnAliyunSecretPasswordChanged(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.PasswordBox passwordBox)
@@ -518,6 +614,29 @@ public partial class MainWindow : Window
     private void OnScrollHomeToTop(object sender, RoutedEventArgs e)
     {
         HomeRecordsScrollViewer.ScrollToTop();
+    }
+
+    private void OnHomeRecordsScrollChanged(object sender, System.Windows.Controls.ScrollChangedEventArgs e)
+    {
+        viewModel.IsBackToTopVisible = e.VerticalOffset > 120;
+    }
+
+    private void DisposeActiveDictationCts(CancellationTokenSource? dictationCts)
+    {
+        if (dictationCts is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(activeDictationCts, dictationCts))
+        {
+            activeDictationCts = null;
+            asrStartupTask = null;
+            capturedTarget = null;
+            pendingPcmChunks.Clear();
+        }
+
+        dictationCts.Dispose();
     }
 
     private void SyncOverlayWindow()

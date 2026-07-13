@@ -53,8 +53,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         if (target.Kind == InputTargetKind.Lost || target.FocusHandle == IntPtr.Zero || !IsWindow(target.FocusHandle))
         {
-            Clipboard.SetText(text);
-            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Captured target was lost; text copied."));
+            return Task.FromResult(CreateLostTargetResult());
         }
 
         if (target.Kind != InputTargetKind.Editable)
@@ -124,14 +123,23 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return capturedTarget with { Kind = InputTargetKind.Lost };
         }
 
-        _ = GetWindowThreadProcessId(capturedTarget.WindowHandle, out var processId);
+        var threadId = GetWindowThreadProcessId(foreground, out var processId);
         if ((int)processId != capturedTarget.ProcessId)
+        {
+            return capturedTarget with { Kind = InputTargetKind.Lost };
+        }
+
+        var info = new GUITHREADINFO { cbSize = GUITHREADINFO_SIZE };
+        if (!GetGUIThreadInfo(threadId, ref info) || info.hwndFocus != capturedTarget.FocusHandle)
         {
             return capturedTarget with { Kind = InputTargetKind.Lost };
         }
 
         return capturedTarget;
     }
+
+    public static TextInsertionResult CreateLostTargetResult() =>
+        new(false, TextInsertionMethod.Auto, "Captured target was lost; history only.");
 
     internal static PasteAttemptResult EvaluatePasteAttempt(int beforeLength, int afterLength, string methodName)
     {

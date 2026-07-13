@@ -38,6 +38,7 @@ public sealed class SqliteStoreTests
         Assert.Equal(record.Id, records[0].Id);
         Assert.Equal(11, stats.TotalCharacters);
         Assert.Equal(TimeSpan.FromSeconds(12), stats.TotalDuration);
+        Assert.Equal(55, stats.AverageCharactersPerMinute);
     }
 
     [Fact]
@@ -173,6 +174,7 @@ public sealed class SqliteStoreTests
             0,
             3);
         await store.UpsertAsync(record, CancellationToken.None);
+        await store.AddCompletedAsync(record.Duration, record.CharacterCount, CancellationToken.None);
         var factory = new FakeAsrProviderFactory { RetranscribeText = "new text" };
         var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
 
@@ -185,6 +187,42 @@ public sealed class SqliteStoreTests
         Assert.Equal(1, updated.RetryCount);
         Assert.Equal(TranscriptionStatus.Completed, updated.Status);
         Assert.True(factory.Provider.RetranscribeWasCalled);
+
+        var stats = await ((Domain.Services.IStatisticsRepository)store).GetAsync(CancellationToken.None);
+        Assert.Equal(8, stats.TotalCharacters);
+    }
+
+    [Fact]
+    public async Task ShellViewModel_Retranscribe_RecalculatesStatisticsForPreviouslyFailedRecord()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var audioPath = Path.Combine(paths.RecordingsDirectory, "failed.wav");
+        await File.WriteAllTextAsync(audioPath, "wav", CancellationToken.None);
+        var record = new TranscriptionRecord(
+            Guid.NewGuid(),
+            TranscriptionStatus.Failed,
+            DateTimeOffset.Now,
+            TimeSpan.FromSeconds(5),
+            string.Empty,
+            audioPath,
+            "Aliyun",
+            "task",
+            0,
+            0);
+        await store.UpsertAsync(record, CancellationToken.None);
+        await store.AddFailedDurationAsync(record.Duration, CancellationToken.None);
+        var factory = new FakeAsrProviderFactory { RetranscribeText = "fresh text" };
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        await viewModel.RetranscribeRecordAsync(viewModel.Records[0], CancellationToken.None);
+
+        var stats = await ((Domain.Services.IStatisticsRepository)store).GetAsync(CancellationToken.None);
+        Assert.Equal("fresh text", (await store.GetAsync(record.Id, CancellationToken.None))!.FinalText);
+        Assert.Equal("fresh text".Length, stats.TotalCharacters);
+        Assert.Equal(TimeSpan.FromSeconds(5), stats.TotalDuration);
     }
 
     [Fact]
