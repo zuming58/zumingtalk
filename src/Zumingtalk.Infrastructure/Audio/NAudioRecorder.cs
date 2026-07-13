@@ -11,6 +11,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
     private WaveFileWriter? writer;
     private Stopwatch? stopwatch;
     private string? currentAudioPath;
+    private TaskCompletionSource<Exception?>? recordingStopped;
 
     public NAudioRecorder(IAppPaths appPaths)
     {
@@ -37,6 +38,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
             BufferMilliseconds = 100
         };
         writer = new WaveFileWriter(currentAudioPath, waveIn.WaveFormat);
+        recordingStopped = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
         stopwatch = Stopwatch.StartNew();
 
         waveIn.DataAvailable += OnDataAvailable;
@@ -45,7 +47,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task<AudioRecordingResult> StopAsync(CancellationToken cancellationToken)
+    public async Task<AudioRecordingResult> StopAsync(CancellationToken cancellationToken)
     {
         if (waveIn is null || writer is null || stopwatch is null || currentAudioPath is null)
         {
@@ -54,15 +56,28 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
 
         var path = currentAudioPath;
         var duration = stopwatch.Elapsed;
+        var stopped = recordingStopped?.Task ?? Task.FromResult<Exception?>(null);
         waveIn.StopRecording();
+        var error = await WaitForRecordingStoppedAsync(stopped, cancellationToken);
         DisposeRecordingObjects();
-        return Task.FromResult(new AudioRecordingResult(path, duration));
+        if (error is not null)
+        {
+            throw error;
+        }
+
+        return new AudioRecordingResult(path, duration);
     }
 
-    public Task CancelAsync(CancellationToken cancellationToken)
+    public async Task CancelAsync(CancellationToken cancellationToken)
     {
         var path = currentAudioPath;
+        var stopped = recordingStopped;
         waveIn?.StopRecording();
+        if (stopped is not null)
+        {
+            _ = await WaitForRecordingStoppedAsync(stopped.Task, cancellationToken);
+        }
+
         DisposeRecordingObjects();
 
         if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
@@ -70,7 +85,6 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
             File.Delete(path);
         }
 
-        return Task.CompletedTask;
     }
 
     public void Dispose()
@@ -114,6 +128,19 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         {
             Debug.WriteLine(e.Exception);
         }
+
+        recordingStopped?.TrySetResult(e.Exception);
+    }
+
+    private static async Task<Exception?> WaitForRecordingStoppedAsync(Task<Exception?> stopped, CancellationToken cancellationToken)
+    {
+        var completed = await Task.WhenAny(stopped, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+        if (!ReferenceEquals(completed, stopped))
+        {
+            throw new TimeoutException("Timed out while stopping microphone recording.");
+        }
+
+        return await stopped;
     }
 
     private void DisposeRecordingObjects()
@@ -132,5 +159,6 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         writer?.Dispose();
         writer = null;
         currentAudioPath = null;
+        recordingStopped = null;
     }
 }
