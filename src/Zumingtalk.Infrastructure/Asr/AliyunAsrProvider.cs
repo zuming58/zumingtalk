@@ -11,16 +11,23 @@ public sealed class AliyunAsrProvider : IAsrProvider
 {
     private readonly AliyunCredentialSettings credentials;
     private readonly AliyunTokenProvider tokenProvider;
+    private readonly bool oralSmoothingEnabled;
 
     public AliyunAsrProvider(AliyunCredentialSettings credentials)
-        : this(credentials, new AliyunTokenProvider(credentials))
+        : this(credentials, oralSmoothingEnabled: true)
     {
     }
 
-    public AliyunAsrProvider(AliyunCredentialSettings credentials, AliyunTokenProvider tokenProvider)
+    public AliyunAsrProvider(AliyunCredentialSettings credentials, bool oralSmoothingEnabled)
+        : this(credentials, new AliyunTokenProvider(credentials), oralSmoothingEnabled)
+    {
+    }
+
+    public AliyunAsrProvider(AliyunCredentialSettings credentials, AliyunTokenProvider tokenProvider, bool oralSmoothingEnabled = true)
     {
         this.credentials = credentials;
         this.tokenProvider = tokenProvider;
+        this.oralSmoothingEnabled = oralSmoothingEnabled;
     }
 
     public async Task TestConnectionAsync(CancellationToken cancellationToken)
@@ -31,7 +38,7 @@ public sealed class AliyunAsrProvider : IAsrProvider
     public async Task<IAsrSession> StartSessionAsync(CancellationToken cancellationToken)
     {
         var token = await tokenProvider.GetTokenAsync(forceRefresh: false, cancellationToken);
-        return await AliyunAsrSession.StartAsync(credentials, token, cancellationToken);
+        return await AliyunAsrSession.StartAsync(credentials, token, oralSmoothingEnabled, cancellationToken);
     }
 
     public async Task<string> RetranscribeAsync(string audioPath, CancellationToken cancellationToken)
@@ -100,7 +107,7 @@ public sealed class AliyunAsrProvider : IAsrProvider
 
         public string? ProviderTaskId { get; }
 
-        public static async Task<AliyunAsrSession> StartAsync(AliyunCredentialSettings credentials, string token, CancellationToken cancellationToken)
+        public static async Task<AliyunAsrSession> StartAsync(AliyunCredentialSettings credentials, string token, bool oralSmoothingEnabled, CancellationToken cancellationToken)
         {
             var taskId = Guid.NewGuid().ToString("N");
             var socket = new ClientWebSocket();
@@ -124,7 +131,8 @@ public sealed class AliyunAsrProvider : IAsrProvider
                     enable_intermediate_result = true,
                     enable_punctuation_prediction = true,
                     enable_inverse_text_normalization = true,
-                    enable_semantic_sentence_detection = true
+                    enable_semantic_sentence_detection = true,
+                    disfluency = oralSmoothingEnabled
                 }
             }, cancellationToken);
             return session;

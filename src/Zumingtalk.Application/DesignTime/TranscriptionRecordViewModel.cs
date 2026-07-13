@@ -33,6 +33,10 @@ public sealed class TranscriptionRecordViewModel : ObservableObject
 
     public string DateTimeText => Record.StartedAt.ToString("yyyy-MM-dd HH:mm");
 
+    public string DateGroupText => Record.StartedAt.Date == DateTimeOffset.Now.Date
+        ? "今天"
+        : Record.StartedAt.ToString("yyyy-MM-dd");
+
     public string Provider => Record.Provider;
 
     public string StatusText => Record.Status == TranscriptionStatus.Completed ? "已完成" : Record.Status.ToString();

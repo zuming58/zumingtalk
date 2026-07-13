@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:data="clr-namespace:System.Windows.Data;assembly=PresentationFramework"
         xmlns:shell="clr-namespace:Zumingtalk.Application.Shell;assembly=Zumingtalk.Application"
         mc:Ignorable="d"
         Title="祖名闪电说"
@@ -14,6 +15,12 @@
         WindowStartupLocation="CenterScreen"
         d:DataContext="{d:DesignInstance Type=shell:ShellViewModel}">
     <Window.Resources>
+        <CollectionViewSource x:Key="GroupedRecords" Source="{Binding Records}">
+            <CollectionViewSource.GroupDescriptions>
+                <data:PropertyGroupDescription PropertyName="DateGroupText" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+
         <Style x:Key="NavButtonStyle" TargetType="Button">
             <Setter Property="Height" Value="58" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -270,7 +277,21 @@
                 </Grid>
 
                 <ScrollViewer x:Name="HomeRecordsScrollViewer" Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemTemplate="{StaticResource RecordCardTemplate}" ItemsSource="{Binding Records}" />
+                    <ItemsControl ItemTemplate="{StaticResource RecordCardTemplate}" ItemsSource="{Binding Source={StaticResource GroupedRecords}}">
+                        <ItemsControl.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Margin="4,22,0,12"
+                                                   FontSize="15"
+                                                   FontWeight="Bold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Text="{Binding Name}" />
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ItemsControl.GroupStyle>
+                    </ItemsControl>
                 </ScrollViewer>
             </Grid>
 

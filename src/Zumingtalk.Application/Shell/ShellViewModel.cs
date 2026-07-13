@@ -384,7 +384,7 @@ public sealed class ShellViewModel : ObservableObject
         {
             ShowToast("正在重新转写录音", ToastKind.Info);
             var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
-            var provider = asrProviderFactory.Create(credentials);
+            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.OralSmoothingEnabled);
             var text = await provider.RetranscribeAsync(record.AudioPath, cancellationToken);
             var updated = record with
             {
@@ -652,7 +652,7 @@ public sealed class ShellViewModel : ObservableObject
         {
             await SaveAliyunCredentialFieldsAsync(CancellationToken.None);
             var credentials = await settingsRepository.GetAliyunCredentialsAsync(CancellationToken.None);
-            var provider = asrProviderFactory.Create(credentials);
+            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.OralSmoothingEnabled);
             await provider.TestConnectionAsync(CancellationToken.None);
             if (microphoneTestService is not null)
             {

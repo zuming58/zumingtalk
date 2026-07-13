@@ -4,5 +4,5 @@ namespace Zumingtalk.Domain.Services;
 
 public interface IAsrProviderFactory
 {
-    IAsrProvider Create(AliyunCredentialSettings credentials);
+    IAsrProvider Create(AliyunCredentialSettings credentials, bool oralSmoothingEnabled);
 }

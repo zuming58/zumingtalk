@@ -259,7 +259,7 @@ public sealed class SqliteStoreTests
 
         public FakeAsrProvider Provider { get; } = new();
 
-        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials)
+        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials, bool oralSmoothingEnabled)
         {
             Provider.RetranscribeText = RetranscribeText;
             return Provider;

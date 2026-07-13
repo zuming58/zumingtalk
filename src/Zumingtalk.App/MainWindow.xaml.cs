@@ -471,7 +471,7 @@ public partial class MainWindow : Window
     private async Task<AliyunAsrProvider> CreateAsrProviderAsync()
     {
         var credentials = await sqliteStore.GetAliyunCredentialsAsync(CancellationToken.None);
-        return new AliyunAsrProvider(credentials);
+        return new AliyunAsrProvider(credentials, viewModel.Settings.Recognition.OralSmoothingEnabled);
     }
 
     private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)
@@ -596,5 +596,6 @@ public partial class MainWindow : Window
 
 public sealed class AliyunAsrProviderFactory : IAsrProviderFactory
 {
-    public IAsrProvider Create(Zumingtalk.Domain.Settings.AliyunCredentialSettings credentials) => new AliyunAsrProvider(credentials);
+    public IAsrProvider Create(Zumingtalk.Domain.Settings.AliyunCredentialSettings credentials, bool oralSmoothingEnabled) =>
+        new AliyunAsrProvider(credentials, oralSmoothingEnabled);
 }
