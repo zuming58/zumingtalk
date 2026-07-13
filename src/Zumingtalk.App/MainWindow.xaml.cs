@@ -515,6 +515,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnScrollHomeToTop(object sender, RoutedEventArgs e)
+    {
+        HomeRecordsScrollViewer.ScrollToTop();
+    }
+
     private void SyncOverlayWindow()
     {
         var state = viewModel.OverlayState;

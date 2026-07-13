@@ -5,7 +5,7 @@ namespace Zumingtalk.Infrastructure.Audio;
 
 public sealed class NAudioPlaybackService : IAudioPlaybackService
 {
-    public Task PlayAsync(string audioPath, CancellationToken cancellationToken)
+    public async Task PlayAsync(string audioPath, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(audioPath) || !File.Exists(audioPath))
         {
@@ -14,15 +14,21 @@ public sealed class NAudioPlaybackService : IAudioPlaybackService
 
         using var audioFile = new AudioFileReader(audioPath);
         using var outputDevice = new WaveOutEvent();
+        var stopped = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        outputDevice.PlaybackStopped += (_, e) => stopped.TrySetResult(e.Exception);
         outputDevice.Init(audioFile);
         outputDevice.Play();
 
-        while (outputDevice.PlaybackState == PlaybackState.Playing)
+        using var registration = cancellationToken.Register(() =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            Thread.Sleep(50);
-        }
+            outputDevice.Stop();
+            stopped.TrySetCanceled(cancellationToken);
+        });
 
-        return Task.CompletedTask;
+        var error = await stopped.Task;
+        if (error is not null)
+        {
+            throw error;
+        }
     }
 }

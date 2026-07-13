@@ -27,6 +27,7 @@ public sealed class ShellViewModel : ObservableObject
     private DictationState overlayState = DictationState.Idle;
     private bool detailsOpen;
     private TranscriptionRecordViewModel? lastDeletedRecord;
+    private CancellationTokenSource? undoWindowCancellation;
     private DictationStatistics statistics;
     private AppSettings settings;
     private string aliyunAppKey = string.Empty;
@@ -259,6 +260,8 @@ public sealed class ShellViewModel : ObservableObject
 
     public string AverageSpeedText => $"{Statistics.AverageCharactersPerMinute}字/分";
 
+    public string TodayText => DateTimeOffset.Now.ToString("yyyy-MM-dd");
+
     public RelayCommand ShowHomeCommand { get; }
 
     public RelayCommand ShowSettingsCommand { get; }
@@ -470,6 +473,7 @@ public sealed class ShellViewModel : ObservableObject
         UndoDeleteCommand.RaiseCanExecuteChanged();
         _ = PersistDeleteAsync(record.Record.Id);
         ShowToast("已删除这条记录", ToastKind.Info, showUndo: true);
+        StartUndoWindow();
     }
 
     private void UndoDelete()
@@ -489,9 +493,34 @@ public sealed class ShellViewModel : ObservableObject
         }
 
         lastDeletedRecord = null;
+        undoWindowCancellation?.Cancel();
         UndoDeleteCommand.RaiseCanExecuteChanged();
         _ = PersistRestoreAsync(restored.Record);
         ShowToast("记录已恢复", ToastKind.Success);
+    }
+
+    private void StartUndoWindow()
+    {
+        undoWindowCancellation?.Cancel();
+        undoWindowCancellation = new CancellationTokenSource();
+        _ = ExpireUndoAsync(undoWindowCancellation.Token);
+    }
+
+    private async Task ExpireUndoAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            lastDeletedRecord = null;
+            UndoDeleteCommand.RaiseCanExecuteChanged();
+            if (Toast?.ShowUndo == true)
+            {
+                Toast = null;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void CopyRecord(object? parameter)

@@ -248,9 +248,12 @@
                 <Grid Margin="46,36,44,0">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock FontSize="24" FontWeight="Bold" Text="今天" />
-                        <TextBlock Margin="18,4,0,0" VerticalAlignment="Center" FontSize="15" Foreground="{StaticResource TextSecondaryBrush}" Text="2026-07-13" />
+                        <TextBlock Margin="18,4,0,0" VerticalAlignment="Center" FontSize="15" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding TodayText}" />
                         <Button Margin="18,0,0,0" Style="{StaticResource IconButtonStyle}" ToolTip="打开录音文件夹" Command="{Binding OpenRecordingsFolderCommand}">
                             <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE8B7;" />
+                        </Button>
+                        <Button Margin="10,0,0,0" Style="{StaticResource IconButtonStyle}" ToolTip="回到顶部" Click="OnScrollHomeToTop">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE74A;" />
                         </Button>
                     </StackPanel>
 
@@ -266,7 +269,7 @@
                     </StackPanel>
                 </Grid>
 
-                <ScrollViewer Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer x:Name="HomeRecordsScrollViewer" Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemTemplate="{StaticResource RecordCardTemplate}" ItemsSource="{Binding Records}" />
                 </ScrollViewer>
             </Grid>
