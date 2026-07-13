@@ -254,7 +254,8 @@ public sealed class AliyunAsrProvider : IAsrProvider
                 ? nameElement.GetString()
                 : null;
 
-            if ((string.Equals(name, "SentenceEnd", StringComparison.OrdinalIgnoreCase) ||
+            if (!string.IsNullOrWhiteSpace(name) &&
+                (string.Equals(name, "SentenceEnd", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(name, "TranscriptionResultChanged", StringComparison.OrdinalIgnoreCase)) &&
                 root.TryGetProperty("payload", out var payload) &&
                 payload.TryGetProperty("result", out var result))
