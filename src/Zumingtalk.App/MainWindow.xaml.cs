@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         sqliteStore = new SqliteStore(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory(), new NAudioMicrophoneDeviceService());
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService());
         audioRecorder = new NAudioRecorder(appPaths, () => viewModel.SelectedMicrophone?.DeviceNumber ?? viewModel.Settings.Recognition.MicrophoneDeviceNumber);
 
         InitializeComponent();

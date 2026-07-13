@@ -119,7 +119,8 @@ public sealed class SqliteStoreTests
             paths,
             null,
             new FakeAsrProviderFactory(),
-            new FakeMicrophoneDeviceService());
+            new FakeMicrophoneDeviceService(),
+            new FakeMicrophoneTestService());
 
         await viewModel.InitializeAsync(CancellationToken.None);
         viewModel.SelectedMicrophone = viewModel.Microphones.Single(device => device.DeviceNumber == 2);
@@ -272,5 +273,10 @@ public sealed class SqliteStoreTests
             new Domain.Services.MicrophoneDevice(0, "Default"),
             new Domain.Services.MicrophoneDevice(2, "USB Mic")
         ];
+    }
+
+    private sealed class FakeMicrophoneTestService : Domain.Services.IMicrophoneTestService
+    {
+        public Task TestAsync(int deviceNumber, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

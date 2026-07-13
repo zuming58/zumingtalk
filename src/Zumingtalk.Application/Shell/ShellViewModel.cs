@@ -18,6 +18,7 @@ public sealed class ShellViewModel : ObservableObject
     private readonly IClipboardService? clipboardService;
     private readonly IAsrProviderFactory? asrProviderFactory;
     private readonly IMicrophoneDeviceService? microphoneDeviceService;
+    private readonly IMicrophoneTestService? microphoneTestService;
     private string selectedPage = "Home";
     private TranscriptionRecordViewModel? selectedRecord;
     private TranscriptionRecordViewModel? menuRecord;
@@ -45,7 +46,8 @@ public sealed class ShellViewModel : ObservableObject
         IAppPaths? appPaths,
         IClipboardService? clipboardService = null,
         IAsrProviderFactory? asrProviderFactory = null,
-        IMicrophoneDeviceService? microphoneDeviceService = null)
+        IMicrophoneDeviceService? microphoneDeviceService = null,
+        IMicrophoneTestService? microphoneTestService = null)
     {
         this.historyRepository = historyRepository;
         this.statisticsRepository = statisticsRepository;
@@ -55,6 +57,7 @@ public sealed class ShellViewModel : ObservableObject
         this.clipboardService = clipboardService;
         this.asrProviderFactory = asrProviderFactory;
         this.microphoneDeviceService = microphoneDeviceService;
+        this.microphoneTestService = microphoneTestService;
 
         Records = MockDataFactory.CreateRecords();
         Microphones = new ObservableCollection<MicrophoneDevice>();
@@ -560,7 +563,12 @@ public sealed class ShellViewModel : ObservableObject
             var credentials = await settingsRepository.GetAliyunCredentialsAsync(CancellationToken.None);
             var provider = asrProviderFactory.Create(credentials);
             await provider.TestConnectionAsync(CancellationToken.None);
-            ShowToast("阿里云连接测试通过", ToastKind.Success);
+            if (microphoneTestService is not null)
+            {
+                await microphoneTestService.TestAsync(Settings.Recognition.MicrophoneDeviceNumber, CancellationToken.None);
+            }
+
+            ShowToast("阿里云连接与麦克风测试通过", ToastKind.Success);
         }
         catch (Exception ex)
         {
