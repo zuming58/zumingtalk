@@ -1,6 +1,7 @@
 using Zumingtalk.Application.Dictation;
 using Zumingtalk.Domain.Dictation;
 using Zumingtalk.Domain.Services;
+using Zumingtalk.Infrastructure.Asr;
 
 namespace Zumingtalk.UnitTests;
 
@@ -73,6 +74,26 @@ public sealed class DictationCoordinatorTests
         Assert.Contains("百分之多少", records[0].Text);
     }
 
+    [Fact]
+    public async Task AliyunProvider_ReadPcmChunks_SkipsWavRiffHeader()
+    {
+        using var temp = new TempDirectory();
+        var wavPath = Path.Combine(temp.Path, "sample.wav");
+        using (var writer = new NAudio.Wave.WaveFileWriter(wavPath, new NAudio.Wave.WaveFormat(16000, 16, 1)))
+        {
+            writer.Write([1, 2, 3, 4], 0, 4);
+        }
+
+        var chunks = new List<AliyunAsrProvider.PcmChunk>();
+        await foreach (var chunk in AliyunAsrProvider.ReadPcmChunksAsync(wavPath, CancellationToken.None))
+        {
+            chunks.Add(chunk);
+        }
+
+        Assert.Single(chunks);
+        Assert.Equal([1, 2, 3, 4], chunks[0].Buffer);
+    }
+
     private sealed class FakeAudioRecorder : IAudioRecorder
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
@@ -128,6 +149,22 @@ public sealed class DictationCoordinatorTests
         {
             InsertWasCalled = true;
             return Task.FromResult(new TextInsertionResult(succeeds, succeeds ? TextInsertionMethod.NativeReplaceSelection : TextInsertionMethod.CopyFallback, "ok"));
+        }
+    }
+
+    private sealed class TempDirectory : IDisposable
+    {
+        public TempDirectory()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "zumingtalk-tests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            // Intentionally left on disk: project instructions prohibit batch directory deletion.
         }
     }
 }

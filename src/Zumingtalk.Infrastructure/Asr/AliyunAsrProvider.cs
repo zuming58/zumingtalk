@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using NAudio.Wave;
 using Zumingtalk.Domain.Services;
 using Zumingtalk.Domain.Settings;
 
@@ -41,22 +42,44 @@ public sealed class AliyunAsrProvider : IAsrProvider
         }
 
         await using var session = await StartSessionAsync(cancellationToken);
-        await using var stream = File.OpenRead(audioPath);
-        var buffer = new byte[3200];
-        while (true)
+        await foreach (var chunk in ReadPcmChunksAsync(audioPath, cancellationToken))
         {
-            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            await session.PushAudioAsync(buffer.AsMemory(0, read), cancellationToken);
-            await Task.Delay(100, cancellationToken);
+            await session.PushAudioAsync(chunk.Buffer, cancellationToken);
+            await Task.Delay(chunk.Duration, cancellationToken);
         }
 
         return await session.FinishAsync(cancellationToken);
     }
+
+    internal static async IAsyncEnumerable<PcmChunk> ReadPcmChunksAsync(
+        string audioPath,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var reader = new WaveFileReader(audioPath);
+        if (reader.WaveFormat.Encoding != WaveFormatEncoding.Pcm ||
+            reader.WaveFormat.SampleRate != 16000 ||
+            reader.WaveFormat.BitsPerSample != 16 ||
+            reader.WaveFormat.Channels != 1)
+        {
+            throw new InvalidOperationException("Aliyun realtime retranscription requires 16 kHz, 16-bit, mono PCM WAV audio.");
+        }
+
+        var buffer = new byte[3200];
+        while (true)
+        {
+            var read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (read == 0)
+            {
+                yield break;
+            }
+
+            var chunk = new byte[read];
+            Buffer.BlockCopy(buffer, 0, chunk, 0, read);
+            yield return new PcmChunk(chunk, TimeSpan.FromSeconds((double)read / reader.WaveFormat.AverageBytesPerSecond));
+        }
+    }
+
+    internal sealed record PcmChunk(byte[] Buffer, TimeSpan Duration);
 
     private sealed class AliyunAsrSession : IAsrSession
     {
