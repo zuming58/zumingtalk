@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -36,6 +37,9 @@ public partial class MainWindow : Window
     private bool allowClose;
     private DateTimeOffset recordingStartedAt;
     private IAsrSession? asrSession;
+    private Task? asrStartupTask;
+    private readonly ConcurrentQueue<byte[]> pendingPcmChunks = new();
+    private readonly SemaphoreSlim asrSendLock = new(1, 1);
     private string? activeProviderTaskId;
     private string? startupRecognitionError;
     private readonly ITextInsertionService textInsertionService = new WindowsTextInsertionService();
@@ -123,6 +127,7 @@ public partial class MainWindow : Window
         }
 
         overlayWindow.Close();
+        asrSendLock.Dispose();
         trayIcon.Visible = false;
         trayIcon.Dispose();
     }
@@ -189,22 +194,14 @@ public partial class MainWindow : Window
             activeProviderTaskId = null;
             startupRecognitionError = null;
             capturedTarget = textInsertionService.CaptureCurrentTarget();
+            pendingPcmChunks.Clear();
             audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
-            try
-            {
-                var asrProvider = await CreateAsrProviderAsync();
-                asrSession = await asrProvider.StartSessionAsync(CancellationToken.None);
-                activeProviderTaskId = asrSession.ProviderTaskId;
-            }
-            catch (Exception asrError)
-            {
-                startupRecognitionError = asrError.Message;
-            }
             await audioRecorder.StartAsync(CancellationToken.None);
             isRecording = true;
             recordingLimitTimer.Start();
             overlayHoldTimer.Stop();
             viewModel.OverlayState = DictationState.Recording;
+            asrStartupTask = StartAsrSessionAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -229,11 +226,13 @@ public partial class MainWindow : Window
             var finalText = succeeded ? text : string.Empty;
             var insertionMethod = TextInsertionMethod.CopyOnly;
             var inserted = false;
+            var insertionBlocked = false;
             if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
             {
                 var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText);
                 insertionMethod = insertion.Method;
                 inserted = insertion.Succeeded;
+                insertionBlocked = !insertion.Succeeded && insertion.Method == TextInsertionMethod.CopyFallback;
             }
 
             var record = new TranscriptionRecord(
@@ -262,7 +261,7 @@ public partial class MainWindow : Window
             await viewModel.ReloadRecordsAsync(CancellationToken.None);
 
             viewModel.OverlayState = succeeded
-                ? (inserted ? DictationState.Completed : DictationState.Saved)
+                ? (inserted ? DictationState.Completed : insertionBlocked ? DictationState.InsertionBlocked : DictationState.Saved)
                 : DictationState.Failed;
             viewModel.Toast = succeeded
                 ? new ToastViewModel(inserted ? "识别结果已写入并保存" : "识别结果已保存到历史记录", ToastKind.Success)
@@ -302,8 +301,25 @@ public partial class MainWindow : Window
             isRecording = false;
             recordingLimitTimer.Stop();
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
+            asrStartupTask = null;
             viewModel.OverlayState = DictationState.Idle;
             capturedTarget = null;
+        }
+    }
+
+    private async Task StartAsrSessionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var asrProvider = await CreateAsrProviderAsync();
+            var session = await asrProvider.StartSessionAsync(cancellationToken);
+            asrSession = session;
+            activeProviderTaskId = session.ProviderTaskId;
+            await FlushPendingPcmAsync(cancellationToken);
+        }
+        catch (Exception asrError)
+        {
+            startupRecognitionError = asrError.Message;
         }
     }
 
@@ -324,7 +340,13 @@ public partial class MainWindow : Window
         return result;
     }
 
-    private async void OnPcmAudioAvailable(object? sender, PcmAudioAvailableEventArgs e)
+    private void OnPcmAudioAvailable(object? sender, PcmAudioAvailableEventArgs e)
+    {
+        pendingPcmChunks.Enqueue(e.Buffer);
+        _ = FlushPendingPcmAsync(CancellationToken.None);
+    }
+
+    private async Task FlushPendingPcmAsync(CancellationToken cancellationToken)
     {
         var session = asrSession;
         if (session is null)
@@ -332,13 +354,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        await asrSendLock.WaitAsync(cancellationToken);
         try
         {
-            await session.PushAudioAsync(e.Buffer, CancellationToken.None);
+            while (pendingPcmChunks.TryDequeue(out var chunk))
+            {
+                await session.PushAudioAsync(chunk, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
-            viewModel.Toast = new ToastViewModel($"实时识别推流失败：{ex.Message}", ToastKind.Error);
+            startupRecognitionError ??= $"实时识别推流失败：{ex.Message}";
+            viewModel.Toast = new ToastViewModel(startupRecognitionError, ToastKind.Error);
+        }
+        finally
+        {
+            asrSendLock.Release();
         }
     }
 
@@ -353,18 +384,24 @@ public partial class MainWindow : Window
 
     private async Task<(string Text, int RetryCount, string? ErrorMessage)> FinishRecognitionWithRetryAsync(string audioPath, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(startupRecognitionError))
-        {
-            return (string.Empty, 0, startupRecognitionError);
-        }
-
         try
         {
+            if (asrStartupTask is not null)
+            {
+                await asrStartupTask;
+            }
+
+            if (!string.IsNullOrWhiteSpace(startupRecognitionError))
+            {
+                throw new InvalidOperationException(startupRecognitionError);
+            }
+
             if (asrSession is null)
             {
                 throw new InvalidOperationException("ASR session was not started.");
             }
 
+            await FlushPendingPcmAsync(cancellationToken);
             var text = await asrSession.FinishAsync(cancellationToken);
             await asrSession.DisposeAsync();
             asrSession = null;
