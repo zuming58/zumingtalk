@@ -136,6 +136,28 @@ public sealed class DictationCoordinatorTests
         Assert.False(result.KeepClipboardFallback);
     }
 
+    [Fact]
+    public void GlobalHotkey_FallbackCtrlWinSpace_TogglesOncePerChord()
+    {
+        var service = new GlobalHotkeyService();
+        var toggleCount = 0;
+        service.HotkeyPressed += (_, e) =>
+        {
+            if (e.Action == HotkeyAction.ToggleDictation)
+            {
+                toggleCount++;
+            }
+        };
+
+        Assert.False(service.ApplyKeyForTest(0x11, isKeyDown: true));
+        Assert.False(service.ApplyKeyForTest(0x5B, isKeyDown: true));
+        Assert.True(service.ApplyKeyForTest(0x20, isKeyDown: true));
+        Assert.False(service.ApplyKeyForTest(0x20, isKeyDown: true));
+        Assert.False(service.ApplyKeyForTest(0x20, isKeyDown: false));
+
+        Assert.Equal(1, toggleCount);
+    }
+
     private sealed class FakeAudioRecorder : IAudioRecorder
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;
