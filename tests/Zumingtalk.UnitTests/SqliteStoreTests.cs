@@ -106,6 +106,40 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task ShellViewModel_Retranscribe_UpdatesExistingRecordWithAliyunResult()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var audioPath = Path.Combine(paths.RecordingsDirectory, "record.wav");
+        await File.WriteAllTextAsync(audioPath, "wav", CancellationToken.None);
+        var record = new TranscriptionRecord(
+            Guid.NewGuid(),
+            TranscriptionStatus.Completed,
+            DateTimeOffset.Now,
+            TimeSpan.FromSeconds(5),
+            "old",
+            audioPath,
+            "Aliyun",
+            "task",
+            0,
+            3);
+        await store.UpsertAsync(record, CancellationToken.None);
+        var factory = new FakeAsrProviderFactory { RetranscribeText = "new text" };
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        await viewModel.RetranscribeRecordAsync(viewModel.Records[0], CancellationToken.None);
+
+        var updated = await store.GetAsync(record.Id, CancellationToken.None);
+        Assert.NotNull(updated);
+        Assert.Equal("new text", updated.FinalText);
+        Assert.Equal(1, updated.RetryCount);
+        Assert.Equal(TranscriptionStatus.Completed, updated.Status);
+        Assert.True(factory.Provider.RetranscribeWasCalled);
+    }
+
+    [Fact]
     public async Task RetentionService_RemovesOnlyExpiredUnreferencedWavFiles()
     {
         using var temp = new TempDirectory();
@@ -153,14 +187,22 @@ public sealed class SqliteStoreTests
 
     private sealed class FakeAsrProviderFactory : Domain.Services.IAsrProviderFactory
     {
+        public string RetranscribeText { get; set; } = string.Empty;
+
         public FakeAsrProvider Provider { get; } = new();
 
-        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials) => Provider;
+        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials)
+        {
+            Provider.RetranscribeText = RetranscribeText;
+            return Provider;
+        }
     }
 
     private sealed class FakeAsrProvider : Domain.Services.IAsrProvider
     {
         public bool TestConnectionWasCalled { get; private set; }
+        public bool RetranscribeWasCalled { get; private set; }
+        public string RetranscribeText { get; set; } = string.Empty;
 
         public Task TestConnectionAsync(CancellationToken cancellationToken)
         {
@@ -170,6 +212,10 @@ public sealed class SqliteStoreTests
 
         public Task<Domain.Services.IAsrSession> StartSessionAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
 
-        public Task<string> RetranscribeAsync(string audioPath, CancellationToken cancellationToken) => throw new NotImplementedException();
+        public Task<string> RetranscribeAsync(string audioPath, CancellationToken cancellationToken)
+        {
+            RetranscribeWasCalled = true;
+            return Task.FromResult(RetranscribeText);
+        }
     }
 }

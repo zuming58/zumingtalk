@@ -65,7 +65,7 @@ public sealed class ShellViewModel : ObservableObject
         OpenDetailsCommand = new RelayCommand(OpenDetails, parameter => parameter is TranscriptionRecordViewModel);
         CloseDetailsCommand = new RelayCommand(_ => DetailsOpen = false);
         PlayCommand = new RelayCommand(PlayRecord, parameter => parameter is TranscriptionRecordViewModel);
-        RetranscribeCommand = new RelayCommand(_ => ShowToast("已提交重新转写", ToastKind.Success));
+        RetranscribeCommand = new RelayCommand(RetranscribeRecord, parameter => ResolveRecord(parameter) is not null);
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         TestConnectionCommand = new RelayCommand(_ => _ = TestConnectionAsync());
         TestInsertionCommand = new RelayCommand(_ => ShowToast("自动写入测试将在 M4 使用真实目标捕获", ToastKind.Info));
@@ -256,6 +256,57 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
+    internal async Task RetranscribeRecordAsync(TranscriptionRecordViewModel recordViewModel, CancellationToken cancellationToken)
+    {
+        if (historyRepository is null || settingsRepository is null || asrProviderFactory is null)
+        {
+            ShowToast("重新转写服务尚未初始化", ToastKind.Error);
+            return;
+        }
+
+        var record = recordViewModel.Record;
+        if (string.IsNullOrWhiteSpace(record.AudioPath) || !File.Exists(record.AudioPath))
+        {
+            ShowToast("录音文件不存在，无法重新转写", ToastKind.Error);
+            return;
+        }
+
+        try
+        {
+            ShowToast("正在重新转写录音", ToastKind.Info);
+            var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
+            var provider = asrProviderFactory.Create(credentials);
+            var text = await provider.RetranscribeAsync(record.AudioPath, cancellationToken);
+            var updated = record with
+            {
+                Status = TranscriptionStatus.Completed,
+                FinalText = text,
+                CharacterCount = text.Length,
+                RetryCount = record.RetryCount + 1,
+                Provider = "Aliyun",
+                ErrorMessage = null
+            };
+
+            await historyRepository.UpsertAsync(updated, cancellationToken);
+            await ReloadRecordsAsync(cancellationToken);
+            SelectedRecord = Records.FirstOrDefault(item => item.Record.Id == updated.Id);
+            ShowToast("重新转写已完成", ToastKind.Success);
+        }
+        catch (Exception ex)
+        {
+            var failed = record with
+            {
+                Status = TranscriptionStatus.Failed,
+                RetryCount = record.RetryCount + 1,
+                ErrorMessage = ex.Message
+            };
+            await historyRepository.UpsertAsync(failed, CancellationToken.None);
+            await ReloadRecordsAsync(CancellationToken.None);
+            SelectedRecord = Records.FirstOrDefault(item => item.Record.Id == failed.Id);
+            ShowToast($"重新转写失败，录音已保留：{ex.Message}", ToastKind.Error);
+        }
+    }
+
     private void ToggleMenu(object? parameter)
     {
         if (parameter is not TranscriptionRecordViewModel record)
@@ -377,6 +428,23 @@ public sealed class ShellViewModel : ObservableObject
         }
 
         _ = PlayRecordAsync(audioPath);
+    }
+
+    private void RetranscribeRecord(object? parameter)
+    {
+        var record = ResolveRecord(parameter);
+        if (record is null)
+        {
+            ShowToast("请选择一条录音记录", ToastKind.Error);
+            return;
+        }
+
+        _ = RetranscribeRecordAsync(record, CancellationToken.None);
+    }
+
+    private TranscriptionRecordViewModel? ResolveRecord(object? parameter)
+    {
+        return parameter as TranscriptionRecordViewModel ?? SelectedRecord;
     }
 
     private async Task PlayRecordAsync(string audioPath)

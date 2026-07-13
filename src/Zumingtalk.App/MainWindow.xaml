@@ -542,7 +542,7 @@
                             </Grid>
                         </Border>
 
-                        <Button Margin="0,18,0,0" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RetranscribeCommand}">
+                        <Button Margin="0,18,0,0" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RetranscribeCommand}" CommandParameter="{Binding SelectedRecord}">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Style="{StaticResource IconTextStyle}" Foreground="White" Text="&#xE72C;" />
                                 <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="重新转写" />
