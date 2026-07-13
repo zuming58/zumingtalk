@@ -42,6 +42,17 @@
             <Setter Property="FontSize" Value="14" />
         </Style>
 
+        <Style x:Key="FieldPasswordBoxStyle" TargetType="PasswordBox">
+            <Setter Property="Height" Value="43" />
+            <Setter Property="Padding" Value="13,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="#CFDEF0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#FAFCFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
         <Style x:Key="SectionBorderStyle" TargetType="Border">
             <Setter Property="MaxWidth" Value="940" />
             <Setter Property="Margin" Value="0,0,0,18" />
@@ -319,15 +330,15 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AppKey" />
-                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding Settings.Recognition.AppKeyPreview}" />
+                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding AliyunAppKey, UpdateSourceTrigger=PropertyChanged}" />
                                     </StackPanel>
                                     <StackPanel Grid.Row="2">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey ID" />
-                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding Settings.Recognition.AccessKeyIdPreview}" />
+                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding AliyunAccessKeyId, UpdateSourceTrigger=PropertyChanged}" />
                                     </StackPanel>
                                     <StackPanel Grid.Row="2" Grid.Column="2">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey Secret" />
-                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="••••••••••••••••••••••••" />
+                                        <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnAliyunSecretPasswordChanged" />
                                     </StackPanel>
                                 </Grid>
                                 <Button Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />

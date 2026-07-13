@@ -63,6 +63,49 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task ShellViewModel_SaveSettings_KeepsExistingSecret_WhenSecretFieldIsBlank()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        await store.SaveAliyunCredentialsAsync(new AliyunCredentialSettings("old-app", "old-id", "old-secret"), CancellationToken.None);
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, new FakeAsrProviderFactory());
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.AliyunAppKey = "new-app";
+        viewModel.AliyunAccessKeyId = "new-id";
+        viewModel.AliyunAccessKeySecret = string.Empty;
+
+        await viewModel.SaveSettingsAsync();
+
+        var loaded = await store.GetAliyunCredentialsAsync(CancellationToken.None);
+        Assert.Equal("new-app", loaded.AppKey);
+        Assert.Equal("new-id", loaded.AccessKeyId);
+        Assert.Equal("old-secret", loaded.AccessKeySecret);
+    }
+
+    [Fact]
+    public async Task ShellViewModel_TestConnection_SavesCredentialsAndCallsProvider()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var factory = new FakeAsrProviderFactory();
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.AliyunAppKey = "app";
+        viewModel.AliyunAccessKeyId = "id";
+        viewModel.AliyunAccessKeySecret = "secret";
+
+        await viewModel.TestConnectionAsync();
+
+        var loaded = await store.GetAliyunCredentialsAsync(CancellationToken.None);
+        Assert.Equal(new AliyunCredentialSettings("app", "id", "secret"), loaded);
+        Assert.True(factory.Provider.TestConnectionWasCalled);
+    }
+
+    [Fact]
     public async Task RetentionService_RemovesOnlyExpiredUnreferencedWavFiles()
     {
         using var temp = new TempDirectory();
@@ -106,5 +149,27 @@ public sealed class SqliteStoreTests
         {
             // Intentionally left on disk: project instructions prohibit batch directory deletion.
         }
+    }
+
+    private sealed class FakeAsrProviderFactory : Domain.Services.IAsrProviderFactory
+    {
+        public FakeAsrProvider Provider { get; } = new();
+
+        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials) => Provider;
+    }
+
+    private sealed class FakeAsrProvider : Domain.Services.IAsrProvider
+    {
+        public bool TestConnectionWasCalled { get; private set; }
+
+        public Task TestConnectionAsync(CancellationToken cancellationToken)
+        {
+            TestConnectionWasCalled = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<Domain.Services.IAsrSession> StartSessionAsync(CancellationToken cancellationToken) => throw new NotImplementedException();
+
+        public Task<string> RetranscribeAsync(string audioPath, CancellationToken cancellationToken) => throw new NotImplementedException();
     }
 }

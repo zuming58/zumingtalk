@@ -16,6 +16,7 @@ public sealed class ShellViewModel : ObservableObject
     private readonly IAudioPlaybackService? audioPlaybackService;
     private readonly IAppPaths? appPaths;
     private readonly IClipboardService? clipboardService;
+    private readonly IAsrProviderFactory? asrProviderFactory;
     private string selectedPage = "Home";
     private TranscriptionRecordViewModel? selectedRecord;
     private TranscriptionRecordViewModel? menuRecord;
@@ -25,6 +26,9 @@ public sealed class ShellViewModel : ObservableObject
     private TranscriptionRecordViewModel? lastDeletedRecord;
     private DictationStatistics statistics;
     private AppSettings settings;
+    private string aliyunAppKey = string.Empty;
+    private string aliyunAccessKeyId = string.Empty;
+    private string aliyunAccessKeySecret = string.Empty;
 
     public ShellViewModel()
         : this(null, null, null, null, null)
@@ -37,7 +41,8 @@ public sealed class ShellViewModel : ObservableObject
         ISettingsRepository? settingsRepository,
         IAudioPlaybackService? audioPlaybackService,
         IAppPaths? appPaths,
-        IClipboardService? clipboardService = null)
+        IClipboardService? clipboardService = null,
+        IAsrProviderFactory? asrProviderFactory = null)
     {
         this.historyRepository = historyRepository;
         this.statisticsRepository = statisticsRepository;
@@ -45,6 +50,7 @@ public sealed class ShellViewModel : ObservableObject
         this.audioPlaybackService = audioPlaybackService;
         this.appPaths = appPaths;
         this.clipboardService = clipboardService;
+        this.asrProviderFactory = asrProviderFactory;
 
         Records = MockDataFactory.CreateRecords();
         statistics = MockDataFactory.CreateStatistics();
@@ -61,7 +67,7 @@ public sealed class ShellViewModel : ObservableObject
         PlayCommand = new RelayCommand(PlayRecord, parameter => parameter is TranscriptionRecordViewModel);
         RetranscribeCommand = new RelayCommand(_ => ShowToast("已提交重新转写", ToastKind.Success));
         SaveSettingsCommand = new RelayCommand(SaveSettings);
-        TestConnectionCommand = new RelayCommand(_ => ShowToast("连接测试需要阿里云凭证，将在 M3 接入实时识别", ToastKind.Info));
+        TestConnectionCommand = new RelayCommand(_ => _ = TestConnectionAsync());
         TestInsertionCommand = new RelayCommand(_ => ShowToast("自动写入测试将在 M4 使用真实目标捕获", ToastKind.Info));
         OpenRecordingsFolderCommand = new RelayCommand(OpenRecordingsFolder);
         ToggleOverlayCommand = new RelayCommand(_ => ToggleDictationDemo());
@@ -89,6 +95,24 @@ public sealed class ShellViewModel : ObservableObject
     {
         get => settings;
         private set => SetProperty(ref settings, value);
+    }
+
+    public string AliyunAppKey
+    {
+        get => aliyunAppKey;
+        set => SetProperty(ref aliyunAppKey, value);
+    }
+
+    public string AliyunAccessKeyId
+    {
+        get => aliyunAccessKeyId;
+        set => SetProperty(ref aliyunAccessKeyId, value);
+    }
+
+    public string AliyunAccessKeySecret
+    {
+        get => aliyunAccessKeySecret;
+        set => SetProperty(ref aliyunAccessKeySecret, value);
     }
 
     public string SelectedPage
@@ -191,6 +215,8 @@ public sealed class ShellViewModel : ObservableObject
         if (settingsRepository is not null)
         {
             Settings = await settingsRepository.GetAsync(cancellationToken);
+            var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
+            LoadAliyunCredentialFields(credentials);
         }
 
         if (historyRepository is not null)
@@ -397,16 +423,71 @@ public sealed class ShellViewModel : ObservableObject
         _ = SaveSettingsAsync();
     }
 
-    private async Task SaveSettingsAsync()
+    internal async Task SaveSettingsAsync()
     {
         try
         {
             await settingsRepository!.SaveAsync(Settings, CancellationToken.None);
+            await SaveAliyunCredentialFieldsAsync(CancellationToken.None);
             ShowToast("设置已保存", ToastKind.Success);
         }
         catch (Exception ex)
         {
             ShowToast($"保存失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
+    internal async Task TestConnectionAsync()
+    {
+        if (settingsRepository is null || asrProviderFactory is null)
+        {
+            ShowToast("连接测试服务尚未初始化", ToastKind.Error);
+            return;
+        }
+
+        try
+        {
+            await SaveAliyunCredentialFieldsAsync(CancellationToken.None);
+            var credentials = await settingsRepository.GetAliyunCredentialsAsync(CancellationToken.None);
+            var provider = asrProviderFactory.Create(credentials);
+            await provider.TestConnectionAsync(CancellationToken.None);
+            ShowToast("阿里云连接测试通过", ToastKind.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"阿里云连接测试失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
+    private async Task SaveAliyunCredentialFieldsAsync(CancellationToken cancellationToken)
+    {
+        if (settingsRepository is null)
+        {
+            return;
+        }
+
+        var existing = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
+        var credentials = new AliyunCredentialSettings(
+            AliyunAppKey.Trim(),
+            AliyunAccessKeyId.Trim(),
+            string.IsNullOrWhiteSpace(AliyunAccessKeySecret)
+                ? existing.AccessKeySecret
+                : AliyunAccessKeySecret.Trim(),
+            existing.RegionId,
+            existing.Endpoint);
+
+        await settingsRepository.SaveAliyunCredentialsAsync(credentials, cancellationToken);
+        Settings = await settingsRepository.GetAsync(cancellationToken);
+        LoadAliyunCredentialFields(credentials, clearSecret: true);
+    }
+
+    private void LoadAliyunCredentialFields(AliyunCredentialSettings credentials, bool clearSecret = true)
+    {
+        AliyunAppKey = credentials.AppKey;
+        AliyunAccessKeyId = credentials.AccessKeyId;
+        if (clearSecret)
+        {
+            AliyunAccessKeySecret = string.Empty;
         }
     }
 

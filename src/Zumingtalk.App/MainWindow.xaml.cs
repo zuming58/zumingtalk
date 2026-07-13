@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     {
         sqliteStore = new SqliteStore(appPaths);
         audioRecorder = new NAudioRecorder(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService());
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory());
 
         InitializeComponent();
 
@@ -451,6 +451,14 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnAliyunSecretPasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.PasswordBox passwordBox)
+        {
+            viewModel.AliyunAccessKeySecret = passwordBox.Password;
+        }
+    }
+
     private void SyncOverlayWindow()
     {
         var state = viewModel.OverlayState;
@@ -476,4 +484,9 @@ public partial class MainWindow : Window
         overlayWindow.Left = workArea.Left + (workArea.Width - overlayWindow.Width) / 2;
         overlayWindow.Top = workArea.Bottom - overlayWindow.Height - 12;
     }
+}
+
+public sealed class AliyunAsrProviderFactory : IAsrProviderFactory
+{
+    public IAsrProvider Create(Zumingtalk.Domain.Settings.AliyunCredentialSettings credentials) => new AliyunAsrProvider(credentials);
 }
