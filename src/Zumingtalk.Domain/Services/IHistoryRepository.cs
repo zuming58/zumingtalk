@@ -13,4 +13,6 @@ public interface IHistoryRepository
     Task UpsertAsync(TranscriptionRecord record, CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid id, CancellationToken cancellationToken);
+
+    Task DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken cancellationToken);
 }

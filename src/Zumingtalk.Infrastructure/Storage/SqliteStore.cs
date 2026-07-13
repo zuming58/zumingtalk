@@ -152,6 +152,16 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM records WHERE datetime(started_at) < datetime($cutoff)";
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToString("O", CultureInfo.InvariantCulture));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     async Task<DictationStatistics> IStatisticsRepository.GetAsync(CancellationToken cancellationToken)
     {
         await InitializeAsync(cancellationToken);

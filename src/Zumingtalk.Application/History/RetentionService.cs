@@ -24,6 +24,8 @@ public sealed class RetentionService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var cutoff = DateTimeOffset.Now.Date.AddDays(-(retentionDays - 1));
+        await historyRepository.DeleteOlderThanAsync(cutoff, cancellationToken);
+
         foreach (var file in Directory.EnumerateFiles(appPaths.RecordingsDirectory, "*.wav", SearchOption.TopDirectoryOnly))
         {
             cancellationToken.ThrowIfCancellationRequested();

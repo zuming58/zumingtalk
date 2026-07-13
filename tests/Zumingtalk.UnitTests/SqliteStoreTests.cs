@@ -140,16 +140,20 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
-    public async Task RetentionService_RemovesOnlyExpiredUnreferencedWavFiles()
+    public async Task RetentionService_RemovesExpiredRecordsAndUnreferencedWavFiles()
     {
         using var temp = new TempDirectory();
         var paths = new AppPaths(temp.Path);
         var store = new SqliteStore(paths);
         var keepPath = Path.Combine(paths.RecordingsDirectory, "keep.wav");
+        var expiredPath = Path.Combine(paths.RecordingsDirectory, "expired.wav");
         var removePath = Path.Combine(paths.RecordingsDirectory, "remove.wav");
         await File.WriteAllTextAsync(keepPath, "keep", CancellationToken.None);
+        await File.WriteAllTextAsync(expiredPath, "expired", CancellationToken.None);
         await File.WriteAllTextAsync(removePath, "remove", CancellationToken.None);
+        File.SetCreationTime(expiredPath, DateTime.Now.AddDays(-5));
         File.SetCreationTime(removePath, DateTime.Now.AddDays(-5));
+        var expiredId = Guid.NewGuid();
 
         await store.UpsertAsync(new TranscriptionRecord(
             Guid.NewGuid(),
@@ -162,11 +166,27 @@ public sealed class SqliteStoreTests
             null,
             0,
             4), CancellationToken.None);
+        await store.UpsertAsync(new TranscriptionRecord(
+            expiredId,
+            TranscriptionStatus.Completed,
+            DateTimeOffset.Now.AddDays(-5),
+            TimeSpan.FromSeconds(1),
+            "expired",
+            expiredPath,
+            "Aliyun",
+            null,
+            0,
+            7), CancellationToken.None);
+        await store.AddCompletedAsync(TimeSpan.FromSeconds(1), 7, CancellationToken.None);
 
         await new RetentionService(store, paths).CleanupAsync(3, CancellationToken.None);
 
         Assert.True(File.Exists(keepPath));
+        Assert.False(File.Exists(expiredPath));
         Assert.False(File.Exists(removePath));
+        Assert.Null(await store.GetAsync(expiredId, CancellationToken.None));
+        var stats = await ((Domain.Services.IStatisticsRepository)store).GetAsync(CancellationToken.None);
+        Assert.Equal(7, stats.TotalCharacters);
     }
 
     private sealed class TempDirectory : IDisposable
