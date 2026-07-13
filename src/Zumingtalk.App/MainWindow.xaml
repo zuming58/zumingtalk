@@ -1,0 +1,599 @@
+<Window x:Class="Zumingtalk.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:shell="clr-namespace:Zumingtalk.Application.Shell;assembly=Zumingtalk.Application"
+        mc:Ignorable="d"
+        Title="祖名闪电说"
+        Width="1440"
+        Height="1024"
+        MinWidth="1080"
+        MinHeight="720"
+        Background="{StaticResource BackgroundBrush}"
+        WindowStartupLocation="CenterScreen"
+        d:DataContext="{d:DesignInstance Type=shell:ShellViewModel}">
+    <Window.Resources>
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="58" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="20,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="15">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FieldTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Height" Value="43" />
+            <Setter Property="Padding" Value="13,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="BorderBrush" Value="#CFDEF0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#FAFCFF" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style x:Key="SectionBorderStyle" TargetType="Border">
+            <Setter Property="MaxWidth" Value="940" />
+            <Setter Property="Margin" Value="0,0,0,18" />
+            <Setter Property="Padding" Value="26,24" />
+            <Setter Property="Background" Value="#DBFFFFFF" />
+            <Setter Property="BorderBrush" Value="#EFD3E2F6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+        </Style>
+
+        <DataTemplate x:Key="RecordCardTemplate">
+            <Grid Margin="0,0,0,16">
+                <Border Padding="28,24,28,15"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="#EBD3E2F6"
+                        BorderThickness="1"
+                        CornerRadius="16">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" Color="#4776B2" Opacity="0.08" ShadowDepth="8" />
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="{Binding Text}"
+                                   FontSize="15"
+                                   LineHeight="25"
+                                   TextWrapping="Wrap" />
+
+                        <Grid Grid.Row="1" Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DurationText}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBlock Text="{Binding Source}" Margin="16,0,0,0" FontSize="13" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        ToolTip="复制"
+                                        Command="{Binding DataContext.CopyCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE8C8;" />
+                                </Button>
+                                <Button Style="{StaticResource IconButtonStyle}"
+                                        ToolTip="删除"
+                                        Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}">
+                                    <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE74D;" />
+                                </Button>
+                                <Grid>
+                                    <Button Style="{StaticResource IconButtonStyle}"
+                                            ToolTip="更多"
+                                            Command="{Binding DataContext.ToggleMenuCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}">
+                                        <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE712;" />
+                                    </Button>
+                                    <Border Width="168"
+                                            Padding="7"
+                                            Margin="-132,42,0,0"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Background="White"
+                                            BorderBrush="{StaticResource BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Panel.ZIndex="12"
+                                            Visibility="{Binding IsMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <StackPanel>
+                                            <Button MinHeight="40"
+                                                    Padding="11,0"
+                                                    HorizontalContentAlignment="Left"
+                                                    BorderThickness="0"
+                                                    Background="Transparent"
+                                                    Command="{Binding DataContext.PlayCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Text="&#xE768;" />
+                                                    <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="14" Text="播放录音" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button MinHeight="40"
+                                                    Padding="11,0"
+                                                    HorizontalContentAlignment="Left"
+                                                    BorderThickness="0"
+                                                    Background="Transparent"
+                                                    Command="{Binding DataContext.RetranscribeCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Text="&#xE72C;" />
+                                                    <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="14" Text="重新转写" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button MinHeight="40"
+                                                    Padding="11,0"
+                                                    HorizontalContentAlignment="Left"
+                                                    BorderThickness="0"
+                                                    Background="Transparent"
+                                                    Command="{Binding DataContext.OpenDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Text="&#xE946;" />
+                                                    <TextBlock Margin="11,0,0,0" VerticalAlignment="Center" FontSize="14" Text="查看详情" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+                <Border Height="1"
+                        Margin="16,0"
+                        VerticalAlignment="Top"
+                        CornerRadius="1"
+                        Visibility="{Binding IsNewest, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#34D9E6" Offset="0" />
+                            <GradientStop Color="#3976FF" Offset="0.5" />
+                            <GradientStop Color="#8D78FF" Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid ClipToBounds="True">
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#F9FCFF" Offset="0" />
+                <GradientStop Color="#F4F8FF" Offset="0.52" />
+                <GradientStop Color="#EDF5FF" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Background="{StaticResource SidebarBrush}" BorderBrush="#C0D3EE" BorderThickness="0,0,1,0" Padding="18,46,18,24">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Height="48" VerticalAlignment="Center">
+                    <Border Width="42" Height="42" CornerRadius="11">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#3980FF" Offset="0" />
+                                <GradientStop Color="#846EFF" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <TextBlock FontFamily="{StaticResource IconFontFamily}" FontSize="24" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Text="&#xE945;" />
+                    </Border>
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="20" FontWeight="Bold" Text="祖名闪电说" />
+                </StackPanel>
+
+                <StackPanel Margin="0,50,0,0">
+                    <Button Style="{StaticResource NavButtonStyle}"
+                            Background="{Binding IsHomeSelected, Converter={StaticResource BooleanToNavBackgroundConverter}}"
+                            Foreground="{Binding IsHomeSelected, Converter={StaticResource BooleanToSelectedBrushConverter}}"
+                            Command="{Binding ShowHomeCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE80F;" />
+                            <TextBlock Margin="14,0,0,0" VerticalAlignment="Center" FontSize="17" FontWeight="Bold" Text="首页" />
+                        </StackPanel>
+                    </Button>
+                    <Button Margin="0,10,0,0"
+                            Style="{StaticResource NavButtonStyle}"
+                            Background="{Binding IsSettingsSelected, Converter={StaticResource BooleanToNavBackgroundConverter}}"
+                            Foreground="{Binding IsSettingsSelected, Converter={StaticResource BooleanToSelectedBrushConverter}}"
+                            Command="{Binding ShowSettingsCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE713;" />
+                            <TextBlock Margin="14,0,0,0" VerticalAlignment="Center" FontSize="17" FontWeight="Bold" Text="设置" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Column="1">
+            <Grid Visibility="{Binding IsHomeSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="132" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Margin="46,36,44,0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock FontSize="24" FontWeight="Bold" Text="今天" />
+                        <TextBlock Margin="18,4,0,0" VerticalAlignment="Center" FontSize="15" Foreground="{StaticResource TextSecondaryBrush}" Text="2026-07-13" />
+                        <Button Margin="18,0,0,0" Style="{StaticResource IconButtonStyle}" ToolTip="打开录音文件夹" Command="{Binding OpenRecordingsFolderCommand}">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE8B7;" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,84,0">
+                        <TextBlock Style="{StaticResource IconTextStyle}" Foreground="{StaticResource PrimaryBrush}" Text="&#xE823;" />
+                        <TextBlock Margin="10,0,22,0" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Text="{Binding TotalDurationText}" />
+                        <Border Width="1" Height="21" Background="#CCD8E9" />
+                        <TextBlock Margin="22,0,0,0" Style="{StaticResource IconTextStyle}" Foreground="{StaticResource CyanBrush}" Text="&#xE8A5;" />
+                        <TextBlock Margin="10,0,22,0" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Text="{Binding TotalCharactersText}" />
+                        <Border Width="1" Height="21" Background="#CCD8E9" />
+                        <TextBlock Margin="22,0,0,0" Style="{StaticResource IconTextStyle}" Foreground="#FF8B34" Text="&#xE945;" />
+                        <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontSize="16" FontWeight="Bold" Text="{Binding AverageSpeedText}" />
+                    </StackPanel>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1" Padding="44,2,40,92" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemTemplate="{StaticResource RecordCardTemplate}" ItemsSource="{Binding Records}" />
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Visibility="{Binding IsSettingsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="126" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Margin="54,32,126,0">
+                    <StackPanel>
+                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Text="偏好设置" />
+                        <TextBlock Margin="0,5,0,4" FontSize="26" FontWeight="Bold" Text="设置" />
+                        <TextBlock FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Text="配置识别服务、麦克风和自动写入兼容性。" />
+                    </StackPanel>
+                    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveSettingsCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Foreground="White" Text="&#xE74E;" />
+                            <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="保存" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1" Padding="54,4,126,70" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,22">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="40" Height="40" CornerRadius="11" Background="#EDF2FF">
+                                            <TextBlock Style="{StaticResource IconTextStyle}" Foreground="{StaticResource PrimaryBrush}" Text="&#xE945;" />
+                                        </Border>
+                                        <StackPanel Margin="14,0,0,0">
+                                            <TextBlock FontSize="17" FontWeight="Bold" Text="语音识别服务" />
+                                            <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="凭证只保存在当前 Windows 用户下。" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Right" Padding="10,7" Background="#EBFAF4" CornerRadius="99">
+                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#218967" Text="已连接" />
+                                    </Border>
+                                </Grid>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="16" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel>
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="服务商" />
+                                        <ComboBox Height="43" Margin="0,8,0,0" SelectedIndex="0">
+                                            <ComboBoxItem Content="阿里云智能语音交互" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AppKey" />
+                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding Settings.Recognition.AppKeyPreview}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2">
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey ID" />
+                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding Settings.Recognition.AccessKeyIdPreview}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="2">
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey Secret" />
+                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="••••••••••••••••••••••••" />
+                                    </StackPanel>
+                                </Grid>
+                                <Button Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,22">
+                                    <Border Width="40" Height="40" CornerRadius="11" Background="#E9FBFD">
+                                        <TextBlock Style="{StaticResource IconTextStyle}" Foreground="#149FB2" Text="&#xE720;" />
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0">
+                                        <TextBlock FontSize="17" FontWeight="Bold" Text="麦克风与听写" />
+                                        <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="声波会实时反映当前输入音量。" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Width="440" HorizontalAlignment="Left">
+                                    <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="输入设备" />
+                                    <ComboBox Height="43" Margin="0,8,0,0" SelectedIndex="0">
+                                        <ComboBoxItem Content="系统默认麦克风" />
+                                        <ComboBoxItem Content="麦克风阵列 (Realtek Audio)" />
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <Grid Width="550" HorizontalAlignment="Left" Margin="0,18,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition />
+                                        <ColumnDefinition Width="50" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="输入音量" />
+                                    <Border Grid.Column="1" Height="7" CornerRadius="8" Background="#E1EAF6">
+                                        <Border Width="300" HorizontalAlignment="Left" CornerRadius="8">
+                                            <Border.Background>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                    <GradientStop Color="#34D9E6" Offset="0" />
+                                                    <GradientStop Color="#3976FF" Offset="0.55" />
+                                                    <GradientStop Color="#8D78FF" Offset="1" />
+                                                </LinearGradientBrush>
+                                            </Border.Background>
+                                        </Border>
+                                    </Border>
+                                    <TextBlock Grid.Column="2" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" Text="正常" />
+                                </Grid>
+                                <TextBlock FontSize="13" Text="口语顺滑（过滤语气词和连续重复）  开启" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,22">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="40" Height="40" CornerRadius="11" Background="#F1EDFF">
+                                            <TextBlock Style="{StaticResource IconTextStyle}" Foreground="#7658EE" Text="&#xE72E;" />
+                                        </Border>
+                                        <StackPanel Margin="14,0,0,0">
+                                            <TextBlock FontSize="17" FontWeight="Bold" Text="自动写入兼容性" />
+                                            <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="安全软件阻止输入时，自动降级为复制文字。" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Right" Padding="10,7" Background="#F1EDFF" CornerRadius="99">
+                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#6650CE" Text="兼容模式已启用" />
+                                    </Border>
+                                </Grid>
+
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
+                                        <StackPanel>
+                                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="主快捷键" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding Settings.Hotkeys.PrimaryHotkey}" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource SuccessBrush}" Text="可用" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
+                                        <StackPanel>
+                                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近目标" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding Settings.Compatibility.LastTargetApplication}" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="输入模拟" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
+                                        <StackPanel>
+                                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近写入" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="已成功" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="22:18" />
+                                        </StackPanel>
+                                    </Border>
+                                </UniformGrid>
+
+                                <Border BorderBrush="#E4EDF8" BorderThickness="0,1,0,0" Padding="0,17,0,17">
+                                    <Grid>
+                                        <StackPanel>
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="固定备用热键" />
+                                            <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="右 Alt 被 360 等安全软件拦截时使用 Ctrl + Win + Space。" />
+                                        </StackPanel>
+                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="已启用" />
+                                    </Grid>
+                                </Border>
+
+                                <Border BorderBrush="#E4EDF8" BorderThickness="0,1,0,0" Padding="0,17,0,17">
+                                    <Grid>
+                                        <StackPanel>
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="写入模式" />
+                                            <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="自动选择原生插入、粘贴消息或输入模拟。" />
+                                        </StackPanel>
+                                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                            <Border Padding="14,8" Background="White" CornerRadius="7">
+                                                <TextBlock Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold" Text="自动选择" />
+                                            </Border>
+                                            <Border Padding="14,8" Background="#F1F5FB" CornerRadius="7">
+                                                <TextBlock Text="仅复制" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestInsertionCommand}" Content="测试自动写入" />
+                                    <Button Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ShowBlockedOverlayCommand}" Content="演示写入受阻" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Panel.ZIndex="20" Visibility="{Binding DetailsOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Button Background="#1F1D2D48" BorderThickness="0" Command="{Binding CloseDetailsCommand}" />
+                <Border Width="420"
+                        HorizontalAlignment="Right"
+                        Background="#F7F9FCFF"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1,0,0,0"
+                        Padding="28,36">
+                    <StackPanel>
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock FontSize="12" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Text="记录详情" />
+                                <TextBlock Margin="0,5,0,0" FontSize="22" FontWeight="Bold" Text="{Binding SelectedRecord.TimeText, StringFormat={}{0} 的听写}" />
+                            </StackPanel>
+                            <Button HorizontalAlignment="Right" Style="{StaticResource IconButtonStyle}" Command="{Binding CloseDetailsCommand}">
+                                <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE711;" />
+                            </Button>
+                        </Grid>
+
+                        <Border Margin="0,30,0,0" Padding="20" Background="White" BorderBrush="#DFEBF9" BorderThickness="1" CornerRadius="14">
+                            <StackPanel>
+                                <TextBlock FontSize="14" LineHeight="25" TextWrapping="Wrap" Text="{Binding SelectedRecord.Text}" />
+                                <Button Margin="0,16,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding CopyCommand}" CommandParameter="{Binding SelectedRecord}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE8C8;" />
+                                        <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="复制文字" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <UniformGrid Columns="2" Margin="0,28,0,0">
+                            <StackPanel Margin="0,0,18,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="开始时间" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Text="{Binding SelectedRecord.DateTimeText}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="时长" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Text="{Binding SelectedRecord.DurationText}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,18,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="识别引擎" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Text="{Binding SelectedRecord.Provider}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="状态" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" Text="{Binding SelectedRecord.StatusText}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,18,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="重试次数" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Text="{Binding SelectedRecord.RetryCountText}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,18">
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="写入方式" />
+                                <TextBlock Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Text="{Binding SelectedRecord.InsertionMethodText}" />
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <Border Padding="17" Background="White" BorderBrush="#DFEBF9" BorderThickness="1" CornerRadius="14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition />
+                                    <ColumnDefinition Width="54" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="34" Height="34" CornerRadius="17" Background="{StaticResource PrimaryBrush}">
+                                    <TextBlock Style="{StaticResource IconTextStyle}" FontSize="18" Foreground="White" Text="&#xE768;" />
+                                </Border>
+                                <Border Grid.Column="2" Height="4" Background="#E3EBF7" CornerRadius="4" VerticalAlignment="Center">
+                                    <Border Width="120" HorizontalAlignment="Left" Background="{StaticResource PrimaryBrush}" CornerRadius="4" />
+                                </Border>
+                                <TextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding SelectedRecord.DurationText}" />
+                            </Grid>
+                        </Border>
+
+                        <Button Margin="0,18,0,0" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RetranscribeCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource IconTextStyle}" Foreground="White" Text="&#xE72C;" />
+                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="重新转写" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Width="360"
+                    Height="40"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,86"
+                    Padding="14,0"
+                    Background="#F6FFFFFF"
+                    BorderBrush="#DCE8F8"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Visibility="{Binding OverlayState, Converter={StaticResource DictationStateToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center" FontSize="13" Text="已复制，可直接粘贴" />
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Text="查看兼容性" />
+                </Grid>
+            </Border>
+
+            <Border MinWidth="300"
+                    MaxWidth="460"
+                    MinHeight="46"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,28"
+                    Padding="14,6,8,6"
+                    Background="#F2FFFFFF"
+                    BorderBrush="#DBE7F7"
+                    BorderThickness="1"
+                    CornerRadius="13"
+                    Visibility="{Binding Toast, Converter={StaticResource NullToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="36" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource IconTextStyle}" Foreground="{StaticResource PrimaryBrush}" Text="&#xE946;" />
+                    <TextBlock Grid.Column="1" Margin="10,0" VerticalAlignment="Center" FontSize="13" Text="{Binding Toast.Message}" />
+                    <Button Grid.Column="2"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            Foreground="{StaticResource PrimaryBrush}"
+                            FontWeight="Bold"
+                            Visibility="{Binding Toast.ShowUndo, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Command="{Binding UndoDeleteCommand}"
+                            Content="撤销" />
+                    <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Command="{Binding ClearToastCommand}">
+                        <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE711;" />
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

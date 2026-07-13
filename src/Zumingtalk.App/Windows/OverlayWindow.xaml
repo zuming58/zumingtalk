@@ -1,0 +1,74 @@
+<Window x:Class="Zumingtalk.App.Windows.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="204"
+        Height="58"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Focusable="False"
+        ResizeMode="NoResize"
+        ShowActivated="False"
+        ShowInTaskbar="False"
+        SizeToContent="Manual"
+        Topmost="True"
+        WindowStyle="None">
+    <Border Width="204"
+            Height="58"
+            Padding="22,0"
+            Background="#B8FFFFFF"
+            BorderBrush="#EFFFFFFF"
+            BorderThickness="1"
+            CornerRadius="29"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="34" Opacity="0.22" ShadowDepth="8" Color="#4670FF" />
+        </Border.Effect>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="1" />
+                <ColumnDefinition Width="76" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock VerticalAlignment="Center"
+                       FontSize="17"
+                       FontWeight="Bold"
+                       Foreground="{Binding OverlayState, Converter={StaticResource DictationStateToBrushConverter}}"
+                       Text="{Binding OverlayState, Converter={StaticResource DictationStateToLabelConverter}}" />
+            <Border Grid.Column="1"
+                    Width="1"
+                    Height="24"
+                    VerticalAlignment="Center"
+                    Background="#B8C8E6" />
+
+            <Grid Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel x:Name="WavePanel" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Border Width="3" Height="10" Margin="2,0" CornerRadius="2" Background="{StaticResource CyanBrush}" />
+                    <Border Width="3" Height="18" Margin="2,0" CornerRadius="2" Background="{StaticResource PrimaryBrush}" />
+                    <Border Width="3" Height="25" Margin="2,0" CornerRadius="2" Background="{StaticResource VioletBrush}" />
+                    <Border Width="3" Height="16" Margin="2,0" CornerRadius="2" Background="{StaticResource PrimaryBrush}" />
+                    <Border Width="3" Height="9" Margin="2,0" CornerRadius="2" Background="{StaticResource CyanBrush}" />
+                </StackPanel>
+
+                <StackPanel x:Name="DotsPanel"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                    <Ellipse Width="6" Height="6" Margin="3,0" Fill="{StaticResource PrimaryBrush}" Opacity="0.45" />
+                    <Ellipse Width="6" Height="6" Margin="3,0" Fill="{StaticResource PrimaryBrush}" Opacity="0.75" />
+                    <Ellipse Width="6" Height="6" Margin="3,0" Fill="{StaticResource PrimaryBrush}" />
+                </StackPanel>
+
+                <TextBlock x:Name="ResultGlyph"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           FontFamily="{StaticResource IconFontFamily}"
+                           FontSize="20"
+                           Foreground="{Binding OverlayState, Converter={StaticResource DictationStateToBrushConverter}}"
+                           Text="{Binding OverlayState, Converter={StaticResource DictationStateToResultGlyphConverter}}"
+                           Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
