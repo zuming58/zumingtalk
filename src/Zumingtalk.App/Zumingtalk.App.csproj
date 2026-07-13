@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zumingtalk.Domain\Zumingtalk.Domain.csproj" />
+    <ProjectReference Include="..\Zumingtalk.Application\Zumingtalk.Application.csproj" />
+    <ProjectReference Include="..\Zumingtalk.Infrastructure\Zumingtalk.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

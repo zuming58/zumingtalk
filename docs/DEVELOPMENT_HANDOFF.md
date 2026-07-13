@@ -189,3 +189,14 @@ design/tokens.json 和 docs/DEVELOPMENT_HANDOFF.md。
 自动写入必须实现交接文档中的分层策略，不允许只用 SendInput(Ctrl+V)。
 每完成一个里程碑先运行测试并提交独立 commit，再进入下一个里程碑。
 ```
+
+## 10. 实施记录
+
+### 2026-07-13 M1 静态壳与视觉验收
+
+- 已建立 .NET 10 WPF 四层解决方案：`Zumingtalk.App`、`Zumingtalk.Application`、`Zumingtalk.Domain`、`Zumingtalk.Infrastructure`，并添加 `Zumingtalk.UnitTests`。
+- 已使用 `prototype/` 固定模拟数据还原首页、设置页、更多菜单、详情抽屉、Toast、兼容性提示和独立 `OverlayWindow` 胶囊。
+- `OverlayWindow` 已独立于 `MainWindow`，设置为 Topmost、NoActivate、ToolWindow、Transparent，空闲时隐藏。
+- 已加入只识别右 Alt 与 Esc 的全局低级键盘钩子骨架，用于 M1 模拟胶囊状态；真实录音、阿里云实时 ASR、SQLite 和分层写入将在 M2-M4 接入。
+- 已定义阿里云 ASR、录音、全局热键和文本写入接口，并保留 `EM_REPLACESEL`、`WM_PASTE`、`SendInput`、复制兜底的分层写入模型。
+- 已验证 `npm run build`、prototype 可点击交互、`dotnet build Zumingtalk.sln`、`dotnet test Zumingtalk.sln --no-build` 和 WPF 启动烟测。
