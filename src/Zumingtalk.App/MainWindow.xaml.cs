@@ -169,7 +169,7 @@ public partial class MainWindow : Window
 
     private void OnHotkeyPressed(object? sender, HotkeyPressedEventArgs e)
     {
-        Dispatcher.Invoke(() =>
+        _ = Dispatcher.BeginInvoke(() =>
         {
             if (e.Action == HotkeyAction.ToggleDictation)
             {

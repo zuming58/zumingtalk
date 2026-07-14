@@ -35,6 +35,11 @@ public partial class OverlayWindow : Window
 
     public void ApplyState(DictationState state)
     {
+        if (state == DictationState.Recording && currentState != DictationState.Recording)
+        {
+            smoothedLevel = 0;
+        }
+
         currentState = state;
         SyncRecordingVisualization();
         DotsPanel.Visibility = state == DictationState.Recognizing ? Visibility.Visible : Visibility.Collapsed;

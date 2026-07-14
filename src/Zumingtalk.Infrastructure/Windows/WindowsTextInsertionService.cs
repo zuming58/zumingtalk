@@ -50,7 +50,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         var foregroundClassName = GetClassName(foreground);
         var className = GetClassName(targetHandle);
         var automationDiagnostics = CaptureAutomationDiagnostics(foregroundClassName, className, info.hwndCaret, (int)processId);
-        var kind = IsEditableClass(className) || HasTextCapacity(targetHandle) || automationDiagnostics.IsEditableCandidate
+        var kind = IsSafeEditableTarget(className, info.hwndCaret != IntPtr.Zero, automationDiagnostics.IsEditableCandidate)
             ? InputTargetKind.Editable
             : InputTargetKind.None;
 
@@ -96,11 +96,11 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         if (RequiresKeyboardPaste(target))
         {
-            var sentEvents = TryKeyboardClipboardPaste(text);
+            var sentEvents = TryKeyboardClipboardPaste(target, text);
             return Task.FromResult(EvaluateKeyboardPasteAttempt(sentEvents, target.Diagnostics));
         }
 
-        var pasted = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: true);
+        var pasted = TryClipboardPaste(target, text, useWindowMessage: true);
         if (pasted.Verified)
         {
             var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "WM_PASTE", KeepsClipboardFallback = pasted.KeepClipboardFallback };
@@ -113,7 +113,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, pasted.Message, diagnostics));
         }
 
-        var sent = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: false);
+        var sent = TryClipboardPaste(target, text, useWindowMessage: false);
         if (sent.Verified)
         {
             var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "SendInput", SendInputEvents = sent.SendInputEvents, LastWin32Error = sent.LastWin32Error };
@@ -167,17 +167,26 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return capturedTarget with { Kind = InputTargetKind.Lost };
         }
 
-        var currentFocus = info.hwndFocus != IntPtr.Zero ? info.hwndFocus : capturedTarget.FocusHandle;
-        if (currentFocus != capturedTarget.FocusHandle)
+        var currentFocus = info.hwndFocus != IntPtr.Zero ? info.hwndFocus : foreground;
+        if (currentFocus == IntPtr.Zero || !IsWindow(currentFocus))
         {
-            var lostDiagnostics = CaptureAutomationDiagnostics(GetClassName(foreground), GetClassName(currentFocus), info.hwndCaret, capturedTarget.ProcessId);
-            return capturedTarget with { Kind = InputTargetKind.Lost, Diagnostics = lostDiagnostics };
+            return capturedTarget with { Kind = InputTargetKind.Lost };
         }
 
         var currentFocusClassName = GetClassName(currentFocus);
         var diagnostics = CaptureAutomationDiagnostics(GetClassName(foreground), currentFocusClassName, info.hwndCaret, capturedTarget.ProcessId);
+        if (!IsSafeEditableTarget(currentFocusClassName, info.hwndCaret != IntPtr.Zero, diagnostics.IsEditableCandidate))
+        {
+            return capturedTarget with { Kind = InputTargetKind.Lost, Diagnostics = diagnostics };
+        }
 
-        return capturedTarget with { Diagnostics = diagnostics };
+        return capturedTarget with
+        {
+            Kind = InputTargetKind.Editable,
+            FocusHandle = currentFocus,
+            ClassName = currentFocusClassName,
+            Diagnostics = diagnostics
+        };
     }
 
     public static TextInsertionResult CreateLostTargetResult() =>
@@ -203,15 +212,21 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             ? null
             : diagnostics with
             {
-                Strategy = attempt.ModifiersReleased ? "SendInput" : "SendInputBlockedByModifier",
+                Strategy = !attempt.TargetStillForeground
+                    ? "TargetChangedCopyFallback"
+                    : attempt.ModifiersReleased ? "SendInput" : "SendInputBlockedByModifier",
                 SendInputEvents = attempt.SentEvents,
                 LastWin32Error = attempt.LastWin32Error,
                 KeepsClipboardFallback = true
             };
 
-        return attempt.SentEvents == ExpectedCtrlVEventCount
+        return attempt.ModifiersReleased && attempt.TargetStillForeground && attempt.SentEvents == ExpectedCtrlVEventCount
             ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.", resultDiagnostics)
-            : new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Keyboard paste was blocked; text kept on clipboard.", resultDiagnostics);
+            : new TextInsertionResult(false, TextInsertionMethod.CopyFallback,
+                attempt.TargetStillForeground
+                    ? "Keyboard paste was blocked; text kept on clipboard."
+                    : "Target changed before keyboard paste; text kept on clipboard.",
+                resultDiagnostics);
     }
 
     internal static TextInsertionResult EvaluateKeyboardPasteAttempt(uint sentEvents) =>
@@ -219,7 +234,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.")
             : new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Keyboard paste was blocked; text kept on clipboard.");
 
-    private static KeyboardPasteAttemptResult TryKeyboardClipboardPaste(string text)
+    private static KeyboardPasteAttemptResult TryKeyboardClipboardPaste(CapturedInputTarget target, string text)
     {
         SetClipboardTextWithRetry(text);
         Thread.Sleep(80);
@@ -228,34 +243,43 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return new KeyboardPasteAttemptResult(0, Marshal.GetLastWin32Error(), false);
         }
 
+        if (!IsSameForegroundTarget(target))
+        {
+            return new KeyboardPasteAttemptResult(0, 0, true, false);
+        }
+
         return SendCtrlV();
     }
 
-    private static PasteAttemptResult TryClipboardPaste(IntPtr focusHandle, string text, bool useWindowMessage)
+    private static PasteAttemptResult TryClipboardPaste(CapturedInputTarget target, string text, bool useWindowMessage)
     {
         var previousText = TryGetClipboardText();
         SetClipboardTextWithRetry(text);
-        var before = GetTextLength(focusHandle);
+        var before = GetTextLength(target.FocusHandle);
         var methodName = useWindowMessage ? "WM_PASTE" : "SendInput Ctrl+V";
         var sendInput = new KeyboardPasteAttemptResult(0, 0, true);
 
         if (useWindowMessage)
         {
-            _ = SendMessage(focusHandle, WM_PASTE, IntPtr.Zero, string.Empty);
+            _ = SendMessage(target.FocusHandle, WM_PASTE, IntPtr.Zero, string.Empty);
         }
         else
         {
-            sendInput = WaitForBlockingModifiersToClear()
-                ? SendCtrlV()
-                : new KeyboardPasteAttemptResult(0, Marshal.GetLastWin32Error(), false);
-            if (!sendInput.ModifiersReleased)
+            if (!WaitForBlockingModifiersToClear())
             {
-                return new PasteAttemptResult(false, true, $"{methodName} was blocked while modifier keys were down.", sendInput.SentEvents, sendInput.LastWin32Error);
+                return new PasteAttemptResult(false, true, $"{methodName} was blocked while modifier keys were down.", 0, Marshal.GetLastWin32Error());
             }
+
+            if (!IsSameForegroundTarget(target))
+            {
+                return new PasteAttemptResult(false, true, $"{methodName} was cancelled because the target changed.", 0, 0);
+            }
+
+            sendInput = SendCtrlV();
         }
 
         Thread.Sleep(120);
-        var after = GetTextLength(focusHandle);
+        var after = GetTextLength(target.FocusHandle);
         var result = EvaluatePasteAttempt(before, after, methodName);
         result = result with { SendInputEvents = sendInput.SentEvents, LastWin32Error = sendInput.LastWin32Error };
 
@@ -269,17 +293,19 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
     internal sealed record PasteAttemptResult(bool Verified, bool KeepClipboardFallback, string Message, uint SendInputEvents = 0, int LastWin32Error = 0);
 
-    internal sealed record KeyboardPasteAttemptResult(uint SentEvents, int LastWin32Error, bool ModifiersReleased);
+    internal sealed record KeyboardPasteAttemptResult(
+        uint SentEvents,
+        int LastWin32Error,
+        bool ModifiersReleased,
+        bool TargetStillForeground = true);
 
     private static CapturedInputTarget None(string processName) =>
         new(InputTargetKind.None, IntPtr.Zero, IntPtr.Zero, 0, processName, GetCurrentIntegrityLevel());
 
-    private static bool IsEditableClass(string className) =>
+    internal static bool IsSafeEditableTarget(string className, bool hasCaret, bool automationCandidate) =>
         IsNativeEditClass(className) ||
-        className.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
-        className.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
-        className.Contains("Internet Explorer_Server", StringComparison.OrdinalIgnoreCase) ||
-        className.Contains("HwndWrapper", StringComparison.OrdinalIgnoreCase);
+        automationCandidate ||
+        (hasCaret && RequiresKeyboardPaste(className));
 
     internal static bool RequiresKeyboardPaste(string className) =>
         className.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
@@ -289,6 +315,18 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
     private static bool RequiresKeyboardPaste(CapturedInputTarget target) =>
         RequiresKeyboardPaste(target.ClassName) || target.Diagnostics?.IsEditableCandidate == true;
+
+    private static bool IsSameForegroundTarget(CapturedInputTarget target)
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground != target.WindowHandle)
+        {
+            return false;
+        }
+
+        _ = GetWindowThreadProcessId(foreground, out var processId);
+        return (int)processId == target.ProcessId;
+    }
 
     private static InputTargetDiagnostics CaptureAutomationDiagnostics(
         string foregroundClassName,

@@ -6,6 +6,26 @@
 
 本轮基于 `codex/v0.6.1-integrated-handoff` 的 `9d3f3e49b875d9c4aa419ae91c9b086817f2d396` 继续开发，保留百炼 `BailianFunAsrProvider.cs`，没有回退到旧 `audit/v0.6.1-capsule-codex-settings` 基线。
 
+主审计在提交 `d233d879e530c183bc5a321be811435dd171dbaf` 基础上继续修正：
+
+- 全局低级键盘钩子改为异步投递 UI 操作，避免同步 UI Automation 查询阻塞钩子回调。
+- 捕获和写入前不再仅凭 `Chrome/WebView/HwndWrapper` 类名判定可编辑；必须是原生编辑框、存在真实插入光标，或当前 UI Automation 元素确认为可编辑候选。
+- 写入前重新检查当前 UI Automation 焦点；同一顶层窗口内若已离开编辑控件则判定 Lost，不发送粘贴。
+- 同一顶层窗口内焦点 HWND 变化时，如果新焦点仍是可编辑候选，则安全更新目标，改善微信/Codex 复合控件兼容性。
+- `SendInput` 前再次确认原顶层窗口和进程仍在前台；等待期间目标变化则只保留剪贴板，不向新窗口写入。
+- 每次新录音重置胶囊音量状态，避免短暂沿用上一次波形。
+- 最终自动测试为 37 passed、0 failed、0 skipped；Release 构建 0 warning、0 error。
+
+主审计结论：代码已达到下一轮真人测试候选标准，但微信和 Codex 是否真正接收文字仍只能由用户环境确认，不能以 `SendInput` 返回值或 Mock 测试代替。
+
+主审计测试包：
+
+- 发布目录：`artifacts/publish/v0.6.2-final-audit-win-x64`
+- ZIP：`artifacts/publish/Zumingtalk-v0.6.2-final-audit-win-x64.zip`
+- EXE ProductVersion：`0.6.2`；FileVersion：`0.6.2.0`
+- EXE SHA-256：`F56A50A0FFAD10FF3995C912798AB5D54DC7DDBBD21CA503075B98F4EBB69E81`
+- ZIP SHA-256：`43B7FB0C2E3B566350DA805EDFB589AE1E4C47A40E5A22B5CDA8806CE3311FAA`
+
 已完成：
 
 - 胶囊窗口调整为 `184×50 DIP`，静音显示 `28×2` 横线，说话波形由 RMS/dBFS、噪声门、迟滞和快攻慢释驱动。

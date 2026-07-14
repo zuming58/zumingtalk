@@ -253,6 +253,36 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
+    public void TextInsertion_KeyboardPaste_CancelsWhenTargetChanged()
+    {
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(
+            new WindowsTextInsertionService.KeyboardPasteAttemptResult(
+                0,
+                0,
+                true,
+                false));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.CopyFallback, result.Method);
+        Assert.Contains("Target changed", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("Edit", false, false, true)]
+    [InlineData("Chrome_RenderWidgetHostHWND", false, true, true)]
+    [InlineData("Chrome_RenderWidgetHostHWND", true, false, true)]
+    [InlineData("Chrome_WidgetWin_1", false, false, false)]
+    [InlineData("Qt5152QWindowIcon", false, false, false)]
+    public void TextInsertion_OnlyTreatsSafeTargetsAsEditable(
+        string className,
+        bool hasCaret,
+        bool automationCandidate,
+        bool expected)
+    {
+        Assert.Equal(expected, WindowsTextInsertionService.IsSafeEditableTarget(className, hasCaret, automationCandidate));
+    }
+
+    [Fact]
     public void TextInsertion_BlockingModifierKeys_AreDetectedBeforePaste()
     {
         short KeyState(int key) => key == 0xA5 ? unchecked((short)0x8000) : (short)0;
