@@ -192,14 +192,14 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
 
     Task<AppSettings> ISettingsRepository.GetAsync(CancellationToken cancellationToken)
     {
-        var credentials = GetAliyunCredentialsAsync(cancellationToken);
+        var credentials = GetBailianCredentialsAsync(cancellationToken);
         return BuildSettingsAsync(credentials, cancellationToken);
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
     {
         await InitializeAsync(cancellationToken);
-        await SetSettingAsync("oral_smoothing", settings.Recognition.OralSmoothingEnabled ? "true" : "false", cancellationToken);
+        await SetSettingAsync("semantic_punctuation", settings.Recognition.SemanticPunctuationEnabled ? "true" : "false", cancellationToken);
         await SetSettingAsync("microphone_device_number", settings.Recognition.MicrophoneDeviceNumber.ToString(CultureInfo.InvariantCulture), cancellationToken);
         await SetSettingAsync("microphone_name", settings.Recognition.MicrophoneName, cancellationToken);
         await SetSettingAsync("fallback_hotkey_enabled", settings.Hotkeys.FallbackHotkeyEnabled ? "true" : "false", cancellationToken);
@@ -224,16 +224,36 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("aliyun_access_key_secret", ProtectedSecret.Protect(credentials.AccessKeySecret), cancellationToken);
     }
 
-    private async Task<AppSettings> BuildSettingsAsync(Task<AliyunCredentialSettings> credentialsTask, CancellationToken cancellationToken)
+    public async Task<BailianCredentialSettings> GetBailianCredentialsAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        var encryptedApiKey = await GetSettingAsync("bailian_api_key", cancellationToken);
+        var apiKey = string.IsNullOrWhiteSpace(encryptedApiKey) ? string.Empty : ProtectedSecret.Unprotect(encryptedApiKey);
+        var model = await GetSettingAsync("bailian_model", cancellationToken) ?? "fun-asr-realtime";
+        var endpoint = await GetSettingAsync("bailian_endpoint", cancellationToken) ?? "wss://dashscope.aliyuncs.com/api-ws/v1/inference";
+        return new BailianCredentialSettings(apiKey, model, endpoint);
+    }
+
+    public async Task SaveBailianCredentialsAsync(BailianCredentialSettings credentials, CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        await SetSettingAsync("bailian_api_key", ProtectedSecret.Protect(credentials.ApiKey), cancellationToken);
+        await SetSettingAsync("bailian_model", credentials.Model, cancellationToken);
+        await SetSettingAsync("bailian_endpoint", credentials.Endpoint, cancellationToken);
+    }
+
+    private async Task<AppSettings> BuildSettingsAsync(Task<BailianCredentialSettings> credentialsTask, CancellationToken cancellationToken)
     {
         var credentials = await credentialsTask;
         var microphoneName = await GetSettingAsync("microphone_name", cancellationToken) ?? "系统默认麦克风";
         var microphoneDeviceNumberText = await GetSettingAsync("microphone_device_number", cancellationToken) ?? "0";
-        var oralSmoothingText = await GetSettingAsync("oral_smoothing", cancellationToken) ?? "true";
+        var semanticPunctuationText = await GetSettingAsync("semantic_punctuation", cancellationToken)
+            ?? await GetSettingAsync("oral_smoothing", cancellationToken)
+            ?? "true";
         var fallbackHotkeyText = await GetSettingAsync("fallback_hotkey_enabled", cancellationToken) ?? "true";
         var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
-        _ = bool.TryParse(oralSmoothingText, out var oralSmoothingEnabled);
+        _ = bool.TryParse(semanticPunctuationText, out var semanticPunctuationEnabled);
         _ = bool.TryParse(fallbackHotkeyText, out var fallbackHotkeyEnabled);
         if (!Enum.TryParse<TextInsertionMethod>(insertionModeText, out var preferredMode))
         {
@@ -243,10 +263,9 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         cancellationToken.ThrowIfCancellationRequested();
         return new AppSettings(
             new RecognitionSettings(
-                "阿里云智能语音交互",
-                Mask(credentials.AppKey),
-                Mask(credentials.AccessKeyId),
-                OralSmoothingEnabled: oralSmoothingEnabled,
+                "阿里云百炼 Fun-ASR",
+                Mask(credentials.ApiKey),
+                SemanticPunctuationEnabled: semanticPunctuationEnabled,
                 MicrophoneName: microphoneName,
                 MicrophoneDeviceNumber: microphoneDeviceNumber),
             new HotkeySettings("右 Alt", fallbackHotkeyEnabled, "Ctrl + Win + Space"),

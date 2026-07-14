@@ -30,11 +30,12 @@ public sealed class ShellViewModel : ObservableObject
     private CancellationTokenSource? undoWindowCancellation;
     private DictationStatistics statistics;
     private AppSettings settings;
-    private string aliyunAppKey = string.Empty;
-    private string aliyunAccessKeyId = string.Empty;
-    private string aliyunAccessKeySecret = string.Empty;
+    private string bailianApiKey = string.Empty;
     private string primaryHotkeyStatusText = "未启动";
     private string fallbackHotkeyStatusText = "未启动";
+    private string lastCapturedTargetText = "尚未捕获";
+    private string lastInsertionMethodText = "尚未写入";
+    private string lastInsertionStatusText = "尚未写入";
     private bool isBackToTopVisible;
     private MicrophoneDevice? selectedMicrophone;
 
@@ -114,22 +115,10 @@ public sealed class ShellViewModel : ObservableObject
         private set => SetProperty(ref settings, value);
     }
 
-    public string AliyunAppKey
+    public string BailianApiKey
     {
-        get => aliyunAppKey;
-        set => SetProperty(ref aliyunAppKey, value);
-    }
-
-    public string AliyunAccessKeyId
-    {
-        get => aliyunAccessKeyId;
-        set => SetProperty(ref aliyunAccessKeyId, value);
-    }
-
-    public string AliyunAccessKeySecret
-    {
-        get => aliyunAccessKeySecret;
-        set => SetProperty(ref aliyunAccessKeySecret, value);
+        get => bailianApiKey;
+        set => SetProperty(ref bailianApiKey, value);
     }
 
     public MicrophoneDevice? SelectedMicrophone
@@ -151,17 +140,17 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
-    public bool OralSmoothingEnabled
+    public bool SemanticPunctuationEnabled
     {
-        get => Settings.Recognition.OralSmoothingEnabled;
+        get => Settings.Recognition.SemanticPunctuationEnabled;
         set
         {
-            if (value == Settings.Recognition.OralSmoothingEnabled)
+            if (value == Settings.Recognition.SemanticPunctuationEnabled)
             {
                 return;
             }
 
-            Settings = Settings with { Recognition = Settings.Recognition with { OralSmoothingEnabled = value } };
+            Settings = Settings with { Recognition = Settings.Recognition with { SemanticPunctuationEnabled = value } };
             OnPropertyChanged();
         }
     }
@@ -283,6 +272,24 @@ public sealed class ShellViewModel : ObservableObject
         set => SetProperty(ref isBackToTopVisible, value);
     }
 
+    public string LastCapturedTargetText
+    {
+        get => lastCapturedTargetText;
+        private set => SetProperty(ref lastCapturedTargetText, value);
+    }
+
+    public string LastInsertionMethodText
+    {
+        get => lastInsertionMethodText;
+        private set => SetProperty(ref lastInsertionMethodText, value);
+    }
+
+    public string LastInsertionStatusText
+    {
+        get => lastInsertionStatusText;
+        private set => SetProperty(ref lastInsertionStatusText, value);
+    }
+
     public RelayCommand ShowHomeCommand { get; }
 
     public RelayCommand ShowSettingsCommand { get; }
@@ -323,8 +330,8 @@ public sealed class ShellViewModel : ObservableObject
         {
             Settings = await settingsRepository.GetAsync(cancellationToken);
             NotifySettingsDerivedProperties();
-            var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
-            LoadAliyunCredentialFields(credentials);
+            var credentials = await settingsRepository.GetBailianCredentialsAsync(cancellationToken);
+            LoadBailianCredentialField(credentials);
         }
 
         LoadMicrophones();
@@ -361,7 +368,7 @@ public sealed class ShellViewModel : ObservableObject
 
     private void NotifySettingsDerivedProperties()
     {
-        OnPropertyChanged(nameof(OralSmoothingEnabled));
+        OnPropertyChanged(nameof(SemanticPunctuationEnabled));
         OnPropertyChanged(nameof(FallbackHotkeyEnabled));
         OnPropertyChanged(nameof(PreferredInsertionMode));
     }
@@ -386,6 +393,38 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
+    public void UpdateCapturedTarget(CapturedInputTarget target)
+    {
+        LastCapturedTargetText = target.Kind switch
+        {
+            InputTargetKind.Editable => string.IsNullOrWhiteSpace(target.ProcessName) ? "可编辑目标" : target.ProcessName,
+            InputTargetKind.None => "无输入目标",
+            InputTargetKind.Lost => "目标已丢失",
+            _ => "尚未捕获"
+        };
+    }
+
+    public void UpdateInsertionResult(TextInsertionResult result)
+    {
+        LastInsertionMethodText = result.Method switch
+        {
+            TextInsertionMethod.NativeReplaceSelection => "原生插入",
+            TextInsertionMethod.PasteMessage => "窗口粘贴",
+            TextInsertionMethod.SendInputPaste => "快捷键粘贴",
+            TextInsertionMethod.CopyFallback => "复制兜底",
+            TextInsertionMethod.CopyOnly => "仅复制",
+            _ => "自动选择"
+        };
+
+        LastInsertionStatusText = result.Succeeded
+            ? "已确认写入"
+            : result.Method == TextInsertionMethod.SendInputPaste
+                ? "已尝试写入"
+                : result.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.CopyOnly
+                    ? "文字已复制"
+                    : "仅保存历史";
+    }
+
     internal async Task RetranscribeRecordAsync(TranscriptionRecordViewModel recordViewModel, CancellationToken cancellationToken)
     {
         if (historyRepository is null || settingsRepository is null || asrProviderFactory is null)
@@ -404,8 +443,8 @@ public sealed class ShellViewModel : ObservableObject
         try
         {
             ShowToast("正在重新转写录音", ToastKind.Info);
-            var credentials = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
-            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.OralSmoothingEnabled);
+            var credentials = await settingsRepository.GetBailianCredentialsAsync(cancellationToken);
+            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.SemanticPunctuationEnabled);
             var text = await provider.RetranscribeAsync(record.AudioPath, cancellationToken);
             var updated = record with
             {
@@ -413,7 +452,7 @@ public sealed class ShellViewModel : ObservableObject
                 FinalText = text,
                 CharacterCount = text.Length,
                 RetryCount = record.RetryCount + 1,
-                Provider = "Aliyun",
+                Provider = "阿里云百炼 Fun-ASR",
                 ErrorMessage = null
             };
 
@@ -659,7 +698,7 @@ public sealed class ShellViewModel : ObservableObject
         try
         {
             await settingsRepository!.SaveAsync(Settings, CancellationToken.None);
-            await SaveAliyunCredentialFieldsAsync(CancellationToken.None);
+            await SaveBailianCredentialFieldAsync(CancellationToken.None);
             ShowToast("设置已保存", ToastKind.Success);
         }
         catch (Exception ex)
@@ -678,20 +717,20 @@ public sealed class ShellViewModel : ObservableObject
 
         try
         {
-            await SaveAliyunCredentialFieldsAsync(CancellationToken.None);
-            var credentials = await settingsRepository.GetAliyunCredentialsAsync(CancellationToken.None);
-            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.OralSmoothingEnabled);
+            await SaveBailianCredentialFieldAsync(CancellationToken.None);
+            var credentials = await settingsRepository.GetBailianCredentialsAsync(CancellationToken.None);
+            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.SemanticPunctuationEnabled);
             await provider.TestConnectionAsync(CancellationToken.None);
             if (microphoneTestService is not null)
             {
                 await microphoneTestService.TestAsync(Settings.Recognition.MicrophoneDeviceNumber, CancellationToken.None);
             }
 
-            ShowToast("阿里云连接与麦克风测试通过", ToastKind.Success);
+            ShowToast("百炼 Fun-ASR 连接与麦克风测试通过", ToastKind.Success);
         }
         catch (Exception ex)
         {
-            ShowToast($"阿里云连接测试失败：{ex.Message}", ToastKind.Error);
+            ShowToast($"百炼连接测试失败：{ex.Message}", ToastKind.Error);
         }
     }
 
@@ -708,15 +747,29 @@ public sealed class ShellViewModel : ObservableObject
             const string testText = "祖名闪电说写入测试";
             if (PreferredInsertionMode == TextInsertionMethod.CopyOnly)
             {
-                await textInsertionService.CopyOnlyAsync(testText, CancellationToken.None);
+                var copyResult = await textInsertionService.CopyOnlyAsync(testText, CancellationToken.None);
+                UpdateInsertionResult(copyResult);
                 ShowToast("仅复制模式已生效，测试文字已复制", ToastKind.Success);
                 return;
             }
 
+            ShowToast("3 秒后测试，请切换到目标输入框", ToastKind.Info);
+            await Task.Delay(TimeSpan.FromSeconds(3));
             var target = textInsertionService.CaptureCurrentTarget();
+            UpdateCapturedTarget(target);
             target = textInsertionService.ValidateCapturedTarget(target);
+            UpdateCapturedTarget(target);
             var result = await textInsertionService.InsertAsync(target, testText, CancellationToken.None);
-            ShowToast(result.Succeeded ? "自动写入测试成功" : "自动写入未确认，测试文字已复制", result.Succeeded ? ToastKind.Success : ToastKind.Info);
+            UpdateInsertionResult(result);
+            var message = result.Method switch
+            {
+                _ when result.Succeeded => "自动写入测试成功",
+                TextInsertionMethod.SendInputPaste => "已尝试自动写入，测试文字保留在剪贴板",
+                TextInsertionMethod.CopyFallback => "自动写入受阻，测试文字已复制",
+                TextInsertionMethod.Auto => "未捕获到原输入框，请重新测试",
+                _ => "未确认自动写入，请查看目标输入框"
+            };
+            ShowToast(message, result.Succeeded ? ToastKind.Success : ToastKind.Info);
         }
         catch (Exception ex)
         {
@@ -724,36 +777,36 @@ public sealed class ShellViewModel : ObservableObject
         }
     }
 
-    private async Task SaveAliyunCredentialFieldsAsync(CancellationToken cancellationToken)
+    private async Task SaveBailianCredentialFieldAsync(CancellationToken cancellationToken)
     {
         if (settingsRepository is null)
         {
             return;
         }
 
-        var existing = await settingsRepository.GetAliyunCredentialsAsync(cancellationToken);
-        var credentials = new AliyunCredentialSettings(
-            AliyunAppKey.Trim(),
-            AliyunAccessKeyId.Trim(),
-            string.IsNullOrWhiteSpace(AliyunAccessKeySecret)
-                ? existing.AccessKeySecret
-                : AliyunAccessKeySecret.Trim(),
-            existing.RegionId,
-            existing.Endpoint);
+        var existing = await settingsRepository.GetBailianCredentialsAsync(cancellationToken);
+        var credentials = existing with
+        {
+            ApiKey = string.IsNullOrWhiteSpace(BailianApiKey)
+                ? existing.ApiKey
+                : BailianApiKey.Trim()
+        };
 
-        await settingsRepository.SaveAliyunCredentialsAsync(credentials, cancellationToken);
+        await settingsRepository.SaveBailianCredentialsAsync(credentials, cancellationToken);
         Settings = await settingsRepository.GetAsync(cancellationToken);
         NotifySettingsDerivedProperties();
-        LoadAliyunCredentialFields(credentials, clearSecret: true);
+        LoadBailianCredentialField(credentials, clearSecret: true);
     }
 
-    private void LoadAliyunCredentialFields(AliyunCredentialSettings credentials, bool clearSecret = true)
+    private void LoadBailianCredentialField(BailianCredentialSettings credentials, bool clearSecret = true)
     {
-        AliyunAppKey = credentials.AppKey;
-        AliyunAccessKeyId = credentials.AccessKeyId;
         if (clearSecret)
         {
-            AliyunAccessKeySecret = string.Empty;
+            BailianApiKey = string.Empty;
+        }
+        else
+        {
+            BailianApiKey = credentials.ApiKey;
         }
     }
 

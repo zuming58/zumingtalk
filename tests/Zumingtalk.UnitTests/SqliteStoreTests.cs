@@ -42,47 +42,43 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
-    public async Task SaveAliyunCredentialsAsync_DoesNotStoreSecretInPlainText()
+    public async Task SaveBailianCredentialsAsync_DoesNotStoreApiKeyInPlainText()
     {
         using var temp = new TempDirectory();
         var paths = new AppPaths(temp.Path);
         var store = new SqliteStore(paths);
-        var credentials = new AliyunCredentialSettings("app-key", "access-id", "super-secret");
+        var credentials = new BailianCredentialSettings("sk-super-secret");
 
-        await store.SaveAliyunCredentialsAsync(credentials, CancellationToken.None);
+        await store.SaveBailianCredentialsAsync(credentials, CancellationToken.None);
 
-        var loaded = await store.GetAliyunCredentialsAsync(CancellationToken.None);
+        var loaded = await store.GetBailianCredentialsAsync(CancellationToken.None);
         await using var connection = new SqliteConnection($"Data Source={paths.DatabasePath};Mode=ReadOnly");
         await connection.OpenAsync(CancellationToken.None);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT value FROM settings WHERE key = 'aliyun_access_key_secret'";
+        command.CommandText = "SELECT value FROM settings WHERE key = 'bailian_api_key'";
         var storedSecret = (string?)await command.ExecuteScalarAsync(CancellationToken.None);
 
         Assert.Equal(credentials, loaded);
-        Assert.NotEqual("super-secret", storedSecret);
+        Assert.NotEqual("sk-super-secret", storedSecret);
         Assert.False(string.IsNullOrWhiteSpace(storedSecret));
     }
 
     [Fact]
-    public async Task ShellViewModel_SaveSettings_KeepsExistingSecret_WhenSecretFieldIsBlank()
+    public async Task ShellViewModel_SaveSettings_KeepsExistingApiKey_WhenPasswordFieldIsBlank()
     {
         using var temp = new TempDirectory();
         var paths = new AppPaths(temp.Path);
         var store = new SqliteStore(paths);
-        await store.SaveAliyunCredentialsAsync(new AliyunCredentialSettings("old-app", "old-id", "old-secret"), CancellationToken.None);
+        await store.SaveBailianCredentialsAsync(new BailianCredentialSettings("sk-old-secret"), CancellationToken.None);
         var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, new FakeAsrProviderFactory());
 
         await viewModel.InitializeAsync(CancellationToken.None);
-        viewModel.AliyunAppKey = "new-app";
-        viewModel.AliyunAccessKeyId = "new-id";
-        viewModel.AliyunAccessKeySecret = string.Empty;
+        viewModel.BailianApiKey = string.Empty;
 
         await viewModel.SaveSettingsAsync();
 
-        var loaded = await store.GetAliyunCredentialsAsync(CancellationToken.None);
-        Assert.Equal("new-app", loaded.AppKey);
-        Assert.Equal("new-id", loaded.AccessKeyId);
-        Assert.Equal("old-secret", loaded.AccessKeySecret);
+        var loaded = await store.GetBailianCredentialsAsync(CancellationToken.None);
+        Assert.Equal("sk-old-secret", loaded.ApiKey);
     }
 
     [Fact]
@@ -95,14 +91,12 @@ public sealed class SqliteStoreTests
         var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
 
         await viewModel.InitializeAsync(CancellationToken.None);
-        viewModel.AliyunAppKey = "app";
-        viewModel.AliyunAccessKeyId = "id";
-        viewModel.AliyunAccessKeySecret = "secret";
+        viewModel.BailianApiKey = "sk-new-secret";
 
         await viewModel.TestConnectionAsync();
 
-        var loaded = await store.GetAliyunCredentialsAsync(CancellationToken.None);
-        Assert.Equal(new AliyunCredentialSettings("app", "id", "secret"), loaded);
+        var loaded = await store.GetBailianCredentialsAsync(CancellationToken.None);
+        Assert.Equal(new BailianCredentialSettings("sk-new-secret"), loaded);
         Assert.True(factory.Provider.TestConnectionWasCalled);
     }
 
@@ -142,14 +136,14 @@ public sealed class SqliteStoreTests
         var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths);
 
         await viewModel.InitializeAsync(CancellationToken.None);
-        viewModel.OralSmoothingEnabled = false;
+        viewModel.SemanticPunctuationEnabled = false;
         viewModel.FallbackHotkeyEnabled = false;
         viewModel.PreferredInsertionMode = TextInsertionMethod.CopyOnly;
 
         await viewModel.SaveSettingsAsync();
 
         var settings = await ((Domain.Services.ISettingsRepository)store).GetAsync(CancellationToken.None);
-        Assert.False(settings.Recognition.OralSmoothingEnabled);
+        Assert.False(settings.Recognition.SemanticPunctuationEnabled);
         Assert.False(settings.Hotkeys.FallbackHotkeyEnabled);
         Assert.Equal(TextInsertionMethod.CopyOnly, settings.Compatibility.PreferredMode);
     }
@@ -297,7 +291,7 @@ public sealed class SqliteStoreTests
 
         public FakeAsrProvider Provider { get; } = new();
 
-        public Domain.Services.IAsrProvider Create(AliyunCredentialSettings credentials, bool oralSmoothingEnabled)
+        public Domain.Services.IAsrProvider Create(BailianCredentialSettings credentials, bool semanticPunctuationEnabled)
         {
             Provider.RetranscribeText = RetranscribeText;
             return Provider;

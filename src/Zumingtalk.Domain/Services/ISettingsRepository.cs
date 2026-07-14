@@ -11,4 +11,8 @@ public interface ISettingsRepository
     Task<AliyunCredentialSettings> GetAliyunCredentialsAsync(CancellationToken cancellationToken);
 
     Task SaveAliyunCredentialsAsync(AliyunCredentialSettings credentials, CancellationToken cancellationToken);
+
+    Task<BailianCredentialSettings> GetBailianCredentialsAsync(CancellationToken cancellationToken);
+
+    Task SaveBailianCredentialsAsync(BailianCredentialSettings credentials, CancellationToken cancellationToken);
 }

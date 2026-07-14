@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private readonly Forms.NotifyIcon trayIcon = new();
     private ShellViewModel viewModel;
     private bool isRecording;
+    private bool isProcessingDictation;
     private bool allowClose;
     private DateTimeOffset recordingStartedAt;
     private IAsrSession? asrSession;
@@ -50,7 +51,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         sqliteStore = new SqliteStore(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AliyunAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService);
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new BailianAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService);
         audioRecorder = new NAudioRecorder(appPaths, () => viewModel.SelectedMicrophone?.DeviceNumber ?? viewModel.Settings.Recognition.MicrophoneDeviceNumber);
 
         InitializeComponent();
@@ -183,6 +184,11 @@ public partial class MainWindow : Window
 
     private async Task ToggleRecordingAsync()
     {
+        if (isProcessingDictation && !isRecording)
+        {
+            return;
+        }
+
         if (!isRecording)
         {
             await StartRecordingAsync();
@@ -194,6 +200,12 @@ public partial class MainWindow : Window
 
     private async Task StartRecordingAsync()
     {
+        if (isProcessingDictation)
+        {
+            return;
+        }
+
+        isProcessingDictation = true;
         var dictationCts = new CancellationTokenSource();
         var dictationId = Interlocked.Increment(ref activeDictationId);
         try
@@ -205,6 +217,7 @@ public partial class MainWindow : Window
             asrSession = null;
             asrStartupTask = null;
             capturedTarget = textInsertionService.CaptureCurrentTarget();
+            viewModel.UpdateCapturedTarget(capturedTarget);
             pendingPcmChunks.Clear();
             audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
             await audioRecorder.StartAsync(dictationCts.Token);
@@ -227,6 +240,7 @@ public partial class MainWindow : Window
             viewModel.OverlayState = DictationState.Failed;
             viewModel.Toast = new ToastViewModel($"麦克风录音启动失败：{ex.Message}", ToastKind.Error);
             HoldThenHideOverlay(1200);
+            isProcessingDictation = false;
         }
     }
 
@@ -235,11 +249,14 @@ public partial class MainWindow : Window
         var dictationCts = activeDictationCts;
         var dictationId = activeDictationId;
         var cancellationToken = dictationCts?.Token ?? CancellationToken.None;
+        var recordId = Guid.NewGuid();
+        AudioRecordingResult? recording = null;
+        var recordPersisted = false;
         try
         {
             viewModel.OverlayState = DictationState.Recognizing;
             recordingLimitTimer.Stop();
-            var recording = await audioRecorder.StopAsync(cancellationToken);
+            recording = await audioRecorder.StopAsync(cancellationToken);
             isRecording = false;
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
 
@@ -253,25 +270,28 @@ public partial class MainWindow : Window
                 viewModel.Settings.Compatibility.PreferredMode == TextInsertionMethod.CopyOnly)
             {
                 var insertion = await textInsertionService.CopyOnlyAsync(finalText, cancellationToken);
+                viewModel.UpdateInsertionResult(insertion);
                 insertionMethod = insertion.Method;
                 insertionBlocked = true;
             }
             else if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
             {
                 var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText, cancellationToken);
+                viewModel.UpdateInsertionResult(insertion);
                 insertionMethod = insertion.Method;
                 inserted = insertion.Succeeded;
-                insertionBlocked = !insertion.Succeeded && insertion.Method == TextInsertionMethod.CopyFallback;
+                insertionBlocked = !insertion.Succeeded &&
+                    insertion.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.SendInputPaste;
             }
 
             var record = new TranscriptionRecord(
-                Guid.NewGuid(),
+                recordId,
                 succeeded ? TranscriptionStatus.Completed : TranscriptionStatus.Failed,
                 recordingStartedAt,
                 recording.Duration,
                 finalText,
                 recording.AudioPath,
-                "Aliyun",
+                "阿里云百炼 Fun-ASR",
                 activeProviderTaskId,
                 retryCount,
                 finalText.Length,
@@ -279,6 +299,7 @@ public partial class MainWindow : Window
                 ErrorMessage: errorMessage);
 
             await sqliteStore.UpsertAsync(record, CancellationToken.None);
+            recordPersisted = true;
             if (succeeded)
             {
                 await sqliteStore.AddCompletedAsync(record.Duration, record.CharacterCount, CancellationToken.None);
@@ -293,7 +314,14 @@ public partial class MainWindow : Window
                 ? (inserted ? DictationState.Completed : insertionBlocked ? DictationState.InsertionBlocked : DictationState.Saved)
                 : DictationState.Failed;
             viewModel.Toast = succeeded
-                ? new ToastViewModel(inserted ? "识别结果已写入并保存" : "识别结果已保存到历史记录", ToastKind.Success)
+                ? insertionMethod switch
+                {
+                    _ when inserted => new ToastViewModel("识别结果已写入并保存", ToastKind.Success),
+                    TextInsertionMethod.SendInputPaste => new ToastViewModel("已尝试自动写入；如未出现，文字可直接粘贴", ToastKind.Info),
+                    TextInsertionMethod.CopyFallback => new ToastViewModel("未能自动写入，文字已复制", ToastKind.Info),
+                    TextInsertionMethod.CopyOnly => new ToastViewModel("识别结果已保存，文字已复制", ToastKind.Success),
+                    _ => new ToastViewModel("识别结果已保存到历史记录", ToastKind.Success)
+                }
                 : new ToastViewModel($"识别失败，录音已保留：{errorMessage}", ToastKind.Error);
             HoldThenHideOverlay(900);
         }
@@ -309,14 +337,18 @@ public partial class MainWindow : Window
                 asrSession = null;
             }
 
-            await SaveFailedRecordingIfPossibleAsync(ex.Message);
+            if (!recordPersisted)
+            {
+                await SaveFailedRecordingIfPossibleAsync(recordId, recording, ex.Message);
+            }
             viewModel.OverlayState = DictationState.Failed;
-            viewModel.Toast = new ToastViewModel($"录音保存失败：{ex.Message}", ToastKind.Error);
+            viewModel.Toast = new ToastViewModel($"听写处理失败，录音已保留：{ex.Message}", ToastKind.Error);
             HoldThenHideOverlay(1200);
         }
         finally
         {
             DisposeActiveDictationCts(dictationCts);
+            isProcessingDictation = false;
         }
     }
 
@@ -346,6 +378,7 @@ public partial class MainWindow : Window
         finally
         {
             isRecording = false;
+            isProcessingDictation = false;
             recordingLimitTimer.Stop();
             audioRecorder.PcmAudioAvailable -= OnPcmAudioAvailable;
             pendingPcmChunks.Clear();
@@ -387,6 +420,7 @@ public partial class MainWindow : Window
     private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText, CancellationToken cancellationToken)
     {
         target = textInsertionService.ValidateCapturedTarget(target);
+        viewModel.UpdateCapturedTarget(target);
         if (target.Kind == InputTargetKind.Lost)
         {
             return new TextInsertionResult(false, TextInsertionMethod.Auto, "Captured target was lost; history only.");
@@ -398,10 +432,12 @@ public partial class MainWindow : Window
         }
 
         var result = await textInsertionService.InsertAsync(target, finalText, cancellationToken);
-        if (!result.Succeeded && result.Method == TextInsertionMethod.CopyFallback)
+        if (!result.Succeeded && result.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.SendInputPaste)
         {
             viewModel.OverlayState = DictationState.InsertionBlocked;
-            viewModel.Toast = new ToastViewModel("未能自动写入，文字已复制", ToastKind.Info);
+            viewModel.Toast = new ToastViewModel(result.Method == TextInsertionMethod.SendInputPaste
+                ? "已尝试自动写入，文字保留在剪贴板"
+                : "未能自动写入，文字已复制", ToastKind.Info);
         }
 
         return result;
@@ -533,18 +569,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveFailedRecordingIfPossibleAsync(string errorMessage)
+    private async Task SaveFailedRecordingIfPossibleAsync(Guid recordId, AudioRecordingResult? recording, string errorMessage)
     {
         try
         {
             var record = new TranscriptionRecord(
-                Guid.NewGuid(),
+                recordId,
                 TranscriptionStatus.Failed,
                 recordingStartedAt,
-                TimeSpan.Zero,
+                recording?.Duration ?? TimeSpan.Zero,
                 string.Empty,
-                null,
-                "Aliyun",
+                recording?.AudioPath,
+                "阿里云百炼 Fun-ASR",
                 activeProviderTaskId,
                 0,
                 0,
@@ -559,10 +595,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<AliyunAsrProvider> CreateAsrProviderAsync()
+    private async Task<BailianFunAsrProvider> CreateAsrProviderAsync()
     {
-        var credentials = await sqliteStore.GetAliyunCredentialsAsync(CancellationToken.None);
-        return new AliyunAsrProvider(credentials, viewModel.Settings.Recognition.OralSmoothingEnabled);
+        var credentials = await sqliteStore.GetBailianCredentialsAsync(CancellationToken.None);
+        return new BailianFunAsrProvider(credentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
     }
 
     private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)
@@ -603,11 +639,11 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() => viewModel.UpdateHotkeyRegistrationStatus(e));
     }
 
-    private void OnAliyunSecretPasswordChanged(object sender, RoutedEventArgs e)
+    private void OnBailianApiKeyPasswordChanged(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.PasswordBox passwordBox)
         {
-            viewModel.AliyunAccessKeySecret = passwordBox.Password;
+            viewModel.BailianApiKey = passwordBox.Password;
         }
     }
 
@@ -655,37 +691,61 @@ public partial class MainWindow : Window
         if (!overlayWindow.IsVisible)
         {
             overlayWindow.Show();
+            PositionOverlay();
         }
     }
 
     private void PositionOverlay()
     {
-        var workArea = GetForegroundMonitorWorkArea();
-        overlayWindow.Left = workArea.Left + (workArea.Width - overlayWindow.Width) / 2;
-        overlayWindow.Top = workArea.Bottom - overlayWindow.Height - 12;
+        var foreground = GetForegroundWindow();
+        var dpi = GetDpiForTargetWindow(foreground);
+
+        var workArea = GetForegroundMonitorWorkArea(foreground, dpi);
+        overlayWindow.PositionOverWorkArea(workArea, dpi);
     }
 
-    private static Rect GetForegroundMonitorWorkArea()
+    private static uint GetDpiForTargetWindow(IntPtr foreground)
     {
-        var foreground = GetForegroundWindow();
+        try
+        {
+            var dpi = foreground == IntPtr.Zero ? 0 : GetDpiForWindow(foreground);
+            return dpi == 0 ? 96u : dpi;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return 96;
+        }
+    }
+
+    private static PhysicalWorkArea GetForegroundMonitorWorkArea(IntPtr foreground, uint dpi)
+    {
         var monitor = MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
         {
-            return new Rect(
+            return new PhysicalWorkArea(
                 info.rcWork.Left,
                 info.rcWork.Top,
-                info.rcWork.Right - info.rcWork.Left,
-                info.rcWork.Bottom - info.rcWork.Top);
+                info.rcWork.Right,
+                info.rcWork.Bottom);
         }
 
-        return SystemParameters.WorkArea;
+        var scale = dpi / 96d;
+        var fallback = SystemParameters.WorkArea;
+        return new PhysicalWorkArea(
+            (int)Math.Round(fallback.Left * scale),
+            (int)Math.Round(fallback.Top * scale),
+            (int)Math.Round(fallback.Right * scale),
+            (int)Math.Round(fallback.Bottom * scale));
     }
 
     private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
@@ -713,8 +773,8 @@ public partial class MainWindow : Window
     }
 }
 
-public sealed class AliyunAsrProviderFactory : IAsrProviderFactory
+public sealed class BailianAsrProviderFactory : IAsrProviderFactory
 {
-    public IAsrProvider Create(Zumingtalk.Domain.Settings.AliyunCredentialSettings credentials, bool oralSmoothingEnabled) =>
-        new AliyunAsrProvider(credentials, oralSmoothingEnabled);
+    public IAsrProvider Create(Zumingtalk.Domain.Settings.BailianCredentialSettings credentials, bool semanticPunctuationEnabled) =>
+        new BailianFunAsrProvider(credentials, semanticPunctuationEnabled);
 }

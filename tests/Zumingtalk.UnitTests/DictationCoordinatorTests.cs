@@ -56,13 +56,44 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
-    public async Task AliyunProvider_FailsClearly_WhenCredentialsAreMissing()
+    public void Recorder_PeakCalculation_HandlesMinimumPcmSample()
     {
-        var provider = new Infrastructure.Asr.AliyunAsrProvider(new Domain.Settings.AliyunCredentialSettings(string.Empty, string.Empty, string.Empty));
+        var buffer = BitConverter.GetBytes(short.MinValue);
+
+        var peak = Infrastructure.Audio.NAudioRecorder.CalculatePeak(buffer);
+
+        Assert.Equal(1d, peak);
+    }
+
+    [Fact]
+    public async Task BailianProvider_FailsClearly_WhenApiKeyIsMissing()
+    {
+        var provider = new BailianFunAsrProvider(new Domain.Settings.BailianCredentialSettings(string.Empty));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.TestConnectionAsync(CancellationToken.None));
 
-        Assert.Contains("credentials", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("API Key", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BailianProvider_BuildsOfficialFunAsrRealtimeProtocolPayloads()
+    {
+        const string taskId = "0123456789abcdef0123456789abcdef";
+        var credentials = new Domain.Settings.BailianCredentialSettings("sk-test");
+
+        var runTask = BailianFunAsrProvider.BuildRunTaskPayload(taskId, credentials, semanticPunctuationEnabled: true);
+        var finishTask = BailianFunAsrProvider.BuildFinishTaskPayload(taskId);
+
+        Assert.Equal("run-task", runTask.GetProperty("header").GetProperty("action").GetString());
+        Assert.Equal("duplex", runTask.GetProperty("header").GetProperty("streaming").GetString());
+        Assert.Equal("fun-asr-realtime", runTask.GetProperty("payload").GetProperty("model").GetString());
+        var parameters = runTask.GetProperty("payload").GetProperty("parameters");
+        Assert.Equal("pcm", parameters.GetProperty("format").GetString());
+        Assert.Equal(16000, parameters.GetProperty("sample_rate").GetInt32());
+        Assert.True(parameters.GetProperty("semantic_punctuation_enabled").GetBoolean());
+        Assert.True(parameters.GetProperty("heartbeat").GetBoolean());
+        Assert.Equal("finish-task", finishTask.GetProperty("header").GetProperty("action").GetString());
+        Assert.Equal(taskId, finishTask.GetProperty("header").GetProperty("task_id").GetString());
     }
 
     [Fact]
@@ -76,7 +107,7 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
-    public async Task AliyunProvider_ReadPcmChunks_SkipsWavRiffHeader()
+    public async Task BailianProvider_ReadPcmChunks_SkipsWavRiffHeader()
     {
         using var temp = new TempDirectory();
         var wavPath = Path.Combine(temp.Path, "sample.wav");
@@ -85,8 +116,8 @@ public sealed class DictationCoordinatorTests
             writer.Write([1, 2, 3, 4], 0, 4);
         }
 
-        var chunks = new List<AliyunAsrProvider.PcmChunk>();
-        await foreach (var chunk in AliyunAsrProvider.ReadPcmChunksAsync(wavPath, CancellationToken.None))
+        var chunks = new List<BailianFunAsrProvider.PcmChunk>();
+        await foreach (var chunk in BailianFunAsrProvider.ReadPcmChunksAsync(wavPath, CancellationToken.None))
         {
             chunks.Add(chunk);
         }
@@ -96,24 +127,25 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
-    public void AliyunTranscriptAggregator_AppendsSentenceEndAndKeepsCurrentInterim()
+    public void FunAsrTranscriptAggregator_AppendsFinalSentenceAndKeepsCurrentInterim()
     {
-        var aggregator = new AliyunTranscriptAggregator();
+        var aggregator = new FunAsrTranscriptAggregator();
 
-        aggregator.ApplyResult("TranscriptionResultChanged", "第一句");
-        aggregator.ApplyResult("SentenceEnd", "第一句。");
-        aggregator.ApplyResult("TranscriptionResultChanged", "第二句");
+        aggregator.ApplyResult(1, "第一句", sentenceEnd: false, heartbeat: false);
+        aggregator.ApplyResult(1, "第一句。", sentenceEnd: true, heartbeat: false);
+        aggregator.ApplyResult(2, "第二句", sentenceEnd: false, heartbeat: false);
 
         Assert.Equal("第一句。第二句", aggregator.GetText());
     }
 
     [Fact]
-    public void AliyunTranscriptAggregator_DoesNotOverwriteEarlierSentences()
+    public void FunAsrTranscriptAggregator_OrdersFinalSentencesAndIgnoresHeartbeat()
     {
-        var aggregator = new AliyunTranscriptAggregator();
+        var aggregator = new FunAsrTranscriptAggregator();
 
-        aggregator.ApplyResult("SentenceEnd", "第一句。");
-        aggregator.ApplyResult("SentenceEnd", "第二句。");
+        aggregator.ApplyResult(2, "第二句。", sentenceEnd: true, heartbeat: false);
+        aggregator.ApplyResult(0, "忽略", sentenceEnd: true, heartbeat: true);
+        aggregator.ApplyResult(1, "第一句。", sentenceEnd: true, heartbeat: false);
 
         Assert.Equal("第一句。第二句。", aggregator.GetText());
     }
@@ -125,6 +157,34 @@ public sealed class DictationCoordinatorTests
 
         Assert.False(result.Verified);
         Assert.True(result.KeepClipboardFallback);
+    }
+
+    [Fact]
+    public void TextInsertion_KeyboardPasteAttempt_IsNotReportedAsVerifiedInsertion()
+    {
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(WindowsTextInsertionService.ExpectedCtrlVEventCount);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.SendInputPaste, result.Method);
+        Assert.Contains("attempted", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TextInsertion_ChromiumClasses_RequireKeyboardPaste()
+    {
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("Chrome_WidgetWin_1"));
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("WebViewHost"));
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("HwndWrapper[Codex]"));
+        Assert.False(WindowsTextInsertionService.RequiresKeyboardPaste("Edit"));
+    }
+
+    [Fact]
+    public void TextInsertion_KeyboardPaste_KeepsCopyFallback_WhenInputWasBlocked()
+    {
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(0);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.CopyFallback, result.Method);
     }
 
     [Fact]

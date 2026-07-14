@@ -4,9 +4,8 @@ namespace Zumingtalk.Domain.Settings;
 
 public sealed record RecognitionSettings(
     string Provider,
-    string AppKeyPreview,
-    string AccessKeyIdPreview,
-    bool OralSmoothingEnabled,
+    string ApiKeyPreview,
+    bool SemanticPunctuationEnabled,
     string MicrophoneName,
     int MicrophoneDeviceNumber = 0);
 
@@ -37,3 +36,8 @@ public sealed record AliyunCredentialSettings(
     string AccessKeySecret,
     string RegionId = "cn-shanghai",
     string Endpoint = "wss://nls-gateway-cn-shanghai.aliyuncs.com/ws/v1");
+
+public sealed record BailianCredentialSettings(
+    string ApiKey,
+    string Model = "fun-asr-realtime",
+    string Endpoint = "wss://dashscope.aliyuncs.com/api-ws/v1/inference");

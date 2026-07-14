@@ -45,8 +45,22 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
 
         waveIn.DataAvailable += OnDataAvailable;
         waveIn.RecordingStopped += OnRecordingStopped;
-        waveIn.StartRecording();
-        return Task.CompletedTask;
+        try
+        {
+            waveIn.StartRecording();
+            return Task.CompletedTask;
+        }
+        catch
+        {
+            var failedPath = currentAudioPath;
+            DisposeRecordingObjects();
+            if (!string.IsNullOrWhiteSpace(failedPath) && File.Exists(failedPath))
+            {
+                File.Delete(failedPath);
+            }
+
+            throw;
+        }
     }
 
     public async Task<AudioRecordingResult> StopAsync(CancellationToken cancellationToken)
@@ -104,7 +118,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         LevelChanged?.Invoke(this, new AudioLevelChangedEventArgs(CalculatePeak(buffer)));
     }
 
-    private static double CalculatePeak(byte[] buffer)
+    internal static double CalculatePeak(byte[] buffer)
     {
         if (buffer.Length < 2)
         {
@@ -114,7 +128,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         var peak = 0;
         for (var index = 0; index + 1 < buffer.Length; index += 2)
         {
-            var sample = Math.Abs(BitConverter.ToInt16(buffer, index));
+            var sample = Math.Abs((int)BitConverter.ToInt16(buffer, index));
             if (sample > peak)
             {
                 peak = sample;

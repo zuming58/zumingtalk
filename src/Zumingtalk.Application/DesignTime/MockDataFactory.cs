@@ -53,10 +53,9 @@ public static class MockDataFactory
     public static AppSettings CreateSettings() =>
         new(
             new RecognitionSettings(
-                Provider: "阿里云智能语音交互",
-                AppKeyPreview: "a9f2••••••••7c1",
-                AccessKeyIdPreview: "LTAI5t••••••••••••",
-                OralSmoothingEnabled: true,
+                Provider: "阿里云百炼 Fun-ASR",
+                ApiKeyPreview: "sk-••••••••••••7c1",
+                SemanticPunctuationEnabled: true,
                 MicrophoneName: "系统默认麦克风",
                 MicrophoneDeviceNumber: 0),
             new HotkeySettings(

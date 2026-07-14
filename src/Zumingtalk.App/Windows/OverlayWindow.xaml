@@ -10,7 +10,9 @@
         ShowActivated="False"
         ShowInTaskbar="False"
         SizeToContent="Manual"
+        Title="祖名闪电说听写胶囊"
         Topmost="True"
+        WindowStartupLocation="Manual"
         WindowStyle="None">
     <Border Width="204"
             Height="58"

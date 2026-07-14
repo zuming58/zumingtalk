@@ -4,6 +4,8 @@
 
 本文件供另一台电脑上的 Codex 或开发者直接开工。实现前必须同时阅读：
 
+> 最新真人测试修复任务：`docs/HANDOFF-2026-07-14-REAL-TEST-R2.md`。该文档优先于本文中已经被真实测试推翻的兼容性假设。
+
 1. [产品需求文档](prd/PRD-001.md)
 2. [UI 设计规范](../design/DESIGN_SYSTEM.md)
 3. [最终首页视觉稿](../design/mockups/home-recording.png)
@@ -11,14 +13,14 @@
 5. [可点击 UI Demo](../prototype/README.md)
 6. [设计 QA](../design-qa.md)
 
-当前仓库不包含 Windows 功能代码。`prototype/` 是可点击的 UI Demo，可用于确认页面和交互，但不得把它作为最终网页架构继续开发。
+当前仓库已包含 Windows 功能代码和可发布的 WPF 应用。`prototype/` 只用于视觉回溯，不是正式架构。
 
 ## 2. 明确技术决策
 
 - 平台：Windows 11 x64 原生桌面应用。
 - 框架：.NET 10 LTS + WPF。
 - 发布：`win-x64` 自包含版本。
-- 识别：阿里云实时语音识别，火山引擎只预留接口。
+- 识别：阿里云百炼 `fun-asr-realtime` WebSocket API；旧智能语音交互 2.0 代码仅保留兼容，火山引擎只预留接口。
 - 音频：16 kHz、16 bit、单声道 PCM，同时落本地 WAV。
 - 数据：SQLite + 本地录音目录。
 - 全局听写：右 Alt 短按切换开始/结束，Esc 取消。
@@ -144,7 +146,7 @@ UI 不直接调用阿里云、SQLite 或 Win32。所有流程由 `DictationCoord
 ### M3：听写流程
 
 - 右 Alt 钩子、Esc 取消、10 分钟上限和备用热键。
-- 阿里云 Token、WebSocket 实时识别、顺滑、标点和重试。
+- 百炼 API Key（DPAPI 加密）、Fun-ASR WebSocket 实时识别、语义断句和重试。
 
 ### M4：写入与兼容
 

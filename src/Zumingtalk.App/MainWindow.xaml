@@ -311,7 +311,7 @@
                         <TextBlock Margin="0,5,0,4" FontSize="26" FontWeight="Bold" Text="设置" />
                         <TextBlock FontSize="14" Foreground="{StaticResource TextSecondaryBrush}" Text="配置识别服务、麦克风和自动写入兼容性。" />
                     </StackPanel>
-                    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveSettingsCommand}">
+                    <Button MinWidth="116" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SaveSettingsCommand}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Style="{StaticResource IconTextStyle}" Foreground="White" Text="&#xE74E;" />
                             <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="保存" />
@@ -319,7 +319,7 @@
                     </Button>
                 </Grid>
 
-                <ScrollViewer Grid.Row="1" Padding="54,4,126,70" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="1" Padding="54,4,126,70" Focusable="False" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <Border Style="{StaticResource SectionBorderStyle}">
                             <StackPanel>
@@ -334,7 +334,7 @@
                                         </StackPanel>
                                     </StackPanel>
                                     <Border HorizontalAlignment="Right" Padding="10,7" Background="#EBFAF4" CornerRadius="99">
-                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#218967" Text="已连接" />
+                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#218967" Text="百炼实时识别" />
                                     </Border>
                                 </Grid>
 
@@ -352,24 +352,21 @@
 
                                     <StackPanel>
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="服务商" />
-                                        <ComboBox Height="43" Margin="0,8,0,0" SelectedIndex="0">
-                                            <ComboBoxItem Content="阿里云智能语音交互" />
+                                        <ComboBox Margin="0,8,0,0" SelectedIndex="0">
+                                            <ComboBoxItem Content="阿里云百炼" />
                                         </ComboBox>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
-                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AppKey" />
-                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding AliyunAppKey, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="模型" />
+                                        <TextBox Margin="0,8,0,0" IsReadOnly="True" Style="{StaticResource FieldTextBoxStyle}" Text="fun-asr-realtime" />
                                     </StackPanel>
-                                    <StackPanel Grid.Row="2">
-                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey ID" />
-                                        <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding AliyunAccessKeyId, UpdateSourceTrigger=PropertyChanged}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Row="2" Grid.Column="2">
-                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="AccessKey Secret" />
-                                        <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnAliyunSecretPasswordChanged" />
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3">
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="百炼 API Key" />
+                                        <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnBailianApiKeyPasswordChanged" />
+                                        <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="使用华北 2（北京）地域的 API Key；保存后仅显示掩码，不会明文写入数据库。" />
                                     </StackPanel>
                                 </Grid>
-                                <Button Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />
+                                <Button MinWidth="174" Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />
                             </StackPanel>
                         </Border>
 
@@ -387,7 +384,7 @@
 
                                 <StackPanel Width="440" HorizontalAlignment="Left">
                                     <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="输入设备" />
-                                    <ComboBox Height="43" Margin="0,8,0,0"
+                                    <ComboBox Margin="0,8,0,0"
                                               DisplayMemberPath="Name"
                                               ItemsSource="{Binding Microphones}"
                                               SelectedItem="{Binding SelectedMicrophone, Mode=TwoWay}" />
@@ -414,8 +411,8 @@
                                     <TextBlock Grid.Column="2" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}" Text="正常" />
                                 </Grid>
                                 <CheckBox FontSize="13"
-                                          IsChecked="{Binding OralSmoothingEnabled, Mode=TwoWay}"
-                                          Content="口语顺滑（过滤语气词和连续重复）" />
+                                          IsChecked="{Binding SemanticPunctuationEnabled, Mode=TwoWay}"
+                                          Content="语义断句（推荐，提升长句标点与断句准确性）" />
                             </StackPanel>
                         </Border>
 
@@ -431,8 +428,8 @@
                                             <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="安全软件阻止输入时，自动降级为复制文字。" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <Border HorizontalAlignment="Right" Padding="10,7" Background="#F1EDFF" CornerRadius="99">
-                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#6650CE" Text="兼容模式已启用" />
+                                    <Border MinWidth="126" Height="34" HorizontalAlignment="Right" Padding="14,0" Background="#F1EDFF" CornerRadius="17">
+                                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12" FontWeight="Bold" Foreground="#6650CE" Text="兼容模式已启用" />
                                     </Border>
                                 </Grid>
 
@@ -447,15 +444,15 @@
                                     <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
                                         <StackPanel>
                                             <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近目标" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding Settings.Compatibility.LastTargetApplication}" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="输入模拟" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding LastCapturedTargetText}" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding LastInsertionMethodText}" />
                                         </StackPanel>
                                     </Border>
                                     <Border Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
                                         <StackPanel>
                                             <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近写入" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="已成功" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="22:18" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding LastInsertionStatusText}" />
+                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="本次运行" />
                                         </StackPanel>
                                     </Border>
                                 </UniformGrid>
@@ -479,8 +476,7 @@
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="写入模式" />
                                             <TextBlock Margin="0,5,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="自动选择原生插入、粘贴消息或输入模拟。" />
                                         </StackPanel>
-                                        <ComboBox Width="140"
-                                                  Height="38"
+                                        <ComboBox Width="172"
                                                   HorizontalAlignment="Right"
                                                   DisplayMemberPath="Label"
                                                   SelectedValuePath="Value"
@@ -489,8 +485,8 @@
                                     </Grid>
                                 </Border>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestInsertionCommand}" Content="测试自动写入" />
-                                    <Button Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ShowBlockedOverlayCommand}" Content="演示写入受阻" />
+                                    <Button MinWidth="136" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestInsertionCommand}" Content="测试自动写入" />
+                                    <Button MinWidth="148" Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ShowBlockedOverlayCommand}" Content="演示写入受阻" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
