@@ -446,6 +446,7 @@
                                             <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近目标" />
                                             <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding LastCapturedTargetText}" />
                                             <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding LastInsertionMethodText}" />
+                                            <TextBlock Margin="0,6,0,0" MaxHeight="52" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding LastTargetDiagnosticsText}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
                                         </StackPanel>
                                     </Border>
                                     <Border Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">

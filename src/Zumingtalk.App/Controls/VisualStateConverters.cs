@@ -55,7 +55,7 @@ public sealed class DictationStateToLabelConverter : IValueConverter
             DictationState.Recognizing => "识别中",
             DictationState.Completed => "已写入",
             DictationState.Saved => "已保存",
-            DictationState.InsertionBlocked => "未能写入",
+            DictationState.InsertionBlocked => "已复制",
             DictationState.Failed => "识别失败",
             _ => string.Empty
         };
@@ -70,7 +70,8 @@ public sealed class DictationStateToBrushConverter : IValueConverter
         value switch
         {
             DictationState.Completed or DictationState.Saved => System.Windows.Application.Current.Resources["SuccessBrush"],
-            DictationState.InsertionBlocked or DictationState.Failed => System.Windows.Application.Current.Resources["ErrorBrush"],
+            DictationState.InsertionBlocked => System.Windows.Application.Current.Resources["VioletBrush"],
+            DictationState.Failed => System.Windows.Application.Current.Resources["ErrorBrush"],
             _ => System.Windows.Application.Current.Resources["PrimaryBrush"]
         };
 

@@ -317,8 +317,8 @@ public partial class MainWindow : Window
                 ? insertionMethod switch
                 {
                     _ when inserted => new ToastViewModel("识别结果已写入并保存", ToastKind.Success),
-                    TextInsertionMethod.SendInputPaste => new ToastViewModel("已尝试自动写入；如未出现，文字可直接粘贴", ToastKind.Info),
-                    TextInsertionMethod.CopyFallback => new ToastViewModel("未能自动写入，文字已复制", ToastKind.Info),
+                    TextInsertionMethod.SendInputPaste => new ToastViewModel("未能确认自动写入，文字已复制，可直接粘贴", ToastKind.Info),
+                    TextInsertionMethod.CopyFallback => new ToastViewModel("自动写入受阻，文字已复制", ToastKind.Info),
                     TextInsertionMethod.CopyOnly => new ToastViewModel("识别结果已保存，文字已复制", ToastKind.Success),
                     _ => new ToastViewModel("识别结果已保存到历史记录", ToastKind.Success)
                 }
@@ -428,7 +428,7 @@ public partial class MainWindow : Window
 
         if (target.Kind != InputTargetKind.Editable)
         {
-            return new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "No editable target; history only.");
+            return new TextInsertionResult(false, TextInsertionMethod.Auto, "No editable target; history only.");
         }
 
         var result = await textInsertionService.InsertAsync(target, finalText, cancellationToken);
@@ -436,8 +436,8 @@ public partial class MainWindow : Window
         {
             viewModel.OverlayState = DictationState.InsertionBlocked;
             viewModel.Toast = new ToastViewModel(result.Method == TextInsertionMethod.SendInputPaste
-                ? "已尝试自动写入，文字保留在剪贴板"
-                : "未能自动写入，文字已复制", ToastKind.Info);
+                ? "未能确认自动写入，文字已复制，可直接粘贴"
+                : "自动写入受阻，文字已复制", ToastKind.Info);
         }
 
         return result;

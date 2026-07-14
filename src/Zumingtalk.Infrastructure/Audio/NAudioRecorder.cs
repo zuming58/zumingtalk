@@ -13,6 +13,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
     private Stopwatch? stopwatch;
     private string? currentAudioPath;
     private TaskCompletionSource<Exception?>? recordingStopped;
+    private AudioLevelMeter levelMeter = new();
 
     public NAudioRecorder(IAppPaths appPaths, Func<int>? getDeviceNumber = null)
     {
@@ -42,6 +43,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
         writer = new WaveFileWriter(currentAudioPath, waveIn.WaveFormat);
         recordingStopped = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
         stopwatch = Stopwatch.StartNew();
+        levelMeter = new AudioLevelMeter();
 
         waveIn.DataAvailable += OnDataAvailable;
         waveIn.RecordingStopped += OnRecordingStopped;
@@ -115,7 +117,7 @@ public sealed class NAudioRecorder : IAudioRecorder, IDisposable
 
         var buffer = e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
         PcmAudioAvailable?.Invoke(this, new PcmAudioAvailableEventArgs(buffer));
-        LevelChanged?.Invoke(this, new AudioLevelChangedEventArgs(CalculatePeak(buffer)));
+        LevelChanged?.Invoke(this, new AudioLevelChangedEventArgs(levelMeter.ProcessPcm16Mono(buffer, waveIn?.WaveFormat.SampleRate ?? 16000)));
     }
 
     internal static double CalculatePeak(byte[] buffer)

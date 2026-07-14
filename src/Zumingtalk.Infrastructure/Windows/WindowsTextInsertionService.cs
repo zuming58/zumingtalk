@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using System.Windows.Automation;
 using Zumingtalk.Domain.Dictation;
 using Zumingtalk.Domain.Services;
 
@@ -16,7 +17,22 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
     private const int INPUT_KEYBOARD = 1;
     private const ushort VK_CONTROL = 0x11;
     private const ushort VK_V = 0x56;
+    private const int VK_MENU = 0x12;
+    private const int VK_RMENU = 0xA5;
+    private const int VK_LCONTROL = 0xA2;
+    private const int VK_RCONTROL = 0xA3;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private static readonly int[] BlockingPasteModifiers =
+    [
+        VK_MENU,
+        VK_RMENU,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_LWIN,
+        VK_RWIN
+    ];
 
     public CapturedInputTarget CaptureCurrentTarget()
     {
@@ -31,8 +47,10 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         var focus = GetGUIThreadInfo(threadId, ref info) ? info.hwndFocus : IntPtr.Zero;
         var targetHandle = focus != IntPtr.Zero ? focus : foreground;
         var processName = GetProcessName((int)processId);
+        var foregroundClassName = GetClassName(foreground);
         var className = GetClassName(targetHandle);
-        var kind = IsEditableClass(className) || HasTextCapacity(targetHandle)
+        var automationDiagnostics = CaptureAutomationDiagnostics(foregroundClassName, className, info.hwndCaret, (int)processId);
+        var kind = IsEditableClass(className) || HasTextCapacity(targetHandle) || automationDiagnostics.IsEditableCandidate
             ? InputTargetKind.Editable
             : InputTargetKind.None;
 
@@ -44,7 +62,8 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             processName,
             GetCurrentIntegrityLevel(),
             className,
-            IsProcessElevated((int)processId));
+            IsProcessElevated((int)processId),
+            automationDiagnostics);
     }
 
     public Task<TextInsertionResult> InsertAsync(CapturedInputTarget target, string text, CancellationToken cancellationToken)
@@ -64,45 +83,52 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         if (IsNativeEditClass(target.ClassName))
         {
             var nativeResult = SendMessage(target.FocusHandle, EM_REPLACESEL, new IntPtr(1), text);
-            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.NativeReplaceSelection, "Inserted with EM_REPLACESEL."));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "EM_REPLACESEL" };
+            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.NativeReplaceSelection, "Inserted with EM_REPLACESEL.", diagnostics));
         }
 
         if (target.IsElevated)
         {
             SetClipboardTextWithRetry(text);
-            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target is elevated; text copied for manual paste."));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "ElevatedCopyFallback", KeepsClipboardFallback = true };
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target is elevated; text copied for manual paste.", diagnostics));
         }
 
-        if (RequiresKeyboardPaste(target.ClassName))
+        if (RequiresKeyboardPaste(target))
         {
             var sentEvents = TryKeyboardClipboardPaste(text);
-            return Task.FromResult(EvaluateKeyboardPasteAttempt(sentEvents));
+            return Task.FromResult(EvaluateKeyboardPasteAttempt(sentEvents, target.Diagnostics));
         }
 
         var pasted = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: true);
         if (pasted.Verified)
         {
-            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.PasteMessage, pasted.Message));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "WM_PASTE", KeepsClipboardFallback = pasted.KeepClipboardFallback };
+            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.PasteMessage, pasted.Message, diagnostics));
         }
 
         if (pasted.KeepClipboardFallback)
         {
-            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, pasted.Message));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "WM_PASTE", KeepsClipboardFallback = true };
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, pasted.Message, diagnostics));
         }
 
         var sent = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: false);
         if (sent.Verified)
         {
-            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.SendInputPaste, sent.Message));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "SendInput", SendInputEvents = sent.SendInputEvents, LastWin32Error = sent.LastWin32Error };
+            return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.SendInputPaste, sent.Message, diagnostics));
         }
 
         if (sent.KeepClipboardFallback)
         {
-            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, sent.Message));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "SendInput", SendInputEvents = sent.SendInputEvents, LastWin32Error = sent.LastWin32Error, KeepsClipboardFallback = true };
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, sent.Message, diagnostics));
         }
 
         SetClipboardTextWithRetry(text);
-        return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Automatic insertion was not verified; text copied."));
+        var fallbackDiagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "CopyFallback", KeepsClipboardFallback = true };
+        return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Automatic insertion was not verified; text copied.", fallbackDiagnostics));
     }
 
     public Task<TextInsertionResult> CopyOnlyAsync(string text, CancellationToken cancellationToken)
@@ -136,12 +162,22 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         }
 
         var info = new GUITHREADINFO { cbSize = GUITHREADINFO_SIZE };
-        if (!GetGUIThreadInfo(threadId, ref info) || info.hwndFocus != capturedTarget.FocusHandle)
+        if (!GetGUIThreadInfo(threadId, ref info))
         {
             return capturedTarget with { Kind = InputTargetKind.Lost };
         }
 
-        return capturedTarget;
+        var currentFocus = info.hwndFocus != IntPtr.Zero ? info.hwndFocus : capturedTarget.FocusHandle;
+        if (currentFocus != capturedTarget.FocusHandle)
+        {
+            var lostDiagnostics = CaptureAutomationDiagnostics(GetClassName(foreground), GetClassName(currentFocus), info.hwndCaret, capturedTarget.ProcessId);
+            return capturedTarget with { Kind = InputTargetKind.Lost, Diagnostics = lostDiagnostics };
+        }
+
+        var currentFocusClassName = GetClassName(currentFocus);
+        var diagnostics = CaptureAutomationDiagnostics(GetClassName(foreground), currentFocusClassName, info.hwndCaret, capturedTarget.ProcessId);
+
+        return capturedTarget with { Diagnostics = diagnostics };
     }
 
     public static TextInsertionResult CreateLostTargetResult() =>
@@ -161,15 +197,37 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
     internal const int ExpectedCtrlVEventCount = 4;
 
+    internal static TextInsertionResult EvaluateKeyboardPasteAttempt(KeyboardPasteAttemptResult attempt, InputTargetDiagnostics? diagnostics = null)
+    {
+        var resultDiagnostics = diagnostics is null
+            ? null
+            : diagnostics with
+            {
+                Strategy = attempt.ModifiersReleased ? "SendInput" : "SendInputBlockedByModifier",
+                SendInputEvents = attempt.SentEvents,
+                LastWin32Error = attempt.LastWin32Error,
+                KeepsClipboardFallback = true
+            };
+
+        return attempt.SentEvents == ExpectedCtrlVEventCount
+            ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.", resultDiagnostics)
+            : new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Keyboard paste was blocked; text kept on clipboard.", resultDiagnostics);
+    }
+
     internal static TextInsertionResult EvaluateKeyboardPasteAttempt(uint sentEvents) =>
         sentEvents == ExpectedCtrlVEventCount
             ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.")
             : new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Keyboard paste was blocked; text kept on clipboard.");
 
-    private static uint TryKeyboardClipboardPaste(string text)
+    private static KeyboardPasteAttemptResult TryKeyboardClipboardPaste(string text)
     {
         SetClipboardTextWithRetry(text);
         Thread.Sleep(80);
+        if (!WaitForBlockingModifiersToClear())
+        {
+            return new KeyboardPasteAttemptResult(0, Marshal.GetLastWin32Error(), false);
+        }
+
         return SendCtrlV();
     }
 
@@ -179,6 +237,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         SetClipboardTextWithRetry(text);
         var before = GetTextLength(focusHandle);
         var methodName = useWindowMessage ? "WM_PASTE" : "SendInput Ctrl+V";
+        var sendInput = new KeyboardPasteAttemptResult(0, 0, true);
 
         if (useWindowMessage)
         {
@@ -186,12 +245,19 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         }
         else
         {
-            _ = SendCtrlV();
+            sendInput = WaitForBlockingModifiersToClear()
+                ? SendCtrlV()
+                : new KeyboardPasteAttemptResult(0, Marshal.GetLastWin32Error(), false);
+            if (!sendInput.ModifiersReleased)
+            {
+                return new PasteAttemptResult(false, true, $"{methodName} was blocked while modifier keys were down.", sendInput.SentEvents, sendInput.LastWin32Error);
+            }
         }
 
         Thread.Sleep(120);
         var after = GetTextLength(focusHandle);
         var result = EvaluatePasteAttempt(before, after, methodName);
+        result = result with { SendInputEvents = sendInput.SentEvents, LastWin32Error = sendInput.LastWin32Error };
 
         if (!result.KeepClipboardFallback && previousText is not null)
         {
@@ -201,7 +267,9 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         return result;
     }
 
-    internal sealed record PasteAttemptResult(bool Verified, bool KeepClipboardFallback, string Message);
+    internal sealed record PasteAttemptResult(bool Verified, bool KeepClipboardFallback, string Message, uint SendInputEvents = 0, int LastWin32Error = 0);
+
+    internal sealed record KeyboardPasteAttemptResult(uint SentEvents, int LastWin32Error, bool ModifiersReleased);
 
     private static CapturedInputTarget None(string processName) =>
         new(InputTargetKind.None, IntPtr.Zero, IntPtr.Zero, 0, processName, GetCurrentIntegrityLevel());
@@ -218,6 +286,170 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         className.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
         className.Contains("Internet Explorer_Server", StringComparison.OrdinalIgnoreCase) ||
         className.Contains("HwndWrapper", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RequiresKeyboardPaste(CapturedInputTarget target) =>
+        RequiresKeyboardPaste(target.ClassName) || target.Diagnostics?.IsEditableCandidate == true;
+
+    private static InputTargetDiagnostics CaptureAutomationDiagnostics(
+        string foregroundClassName,
+        string focusClassName,
+        IntPtr caretHandle,
+        int processId)
+    {
+        var keyboardState = DescribeBlockingModifierState();
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused is null)
+            {
+                return EmptyDiagnostics(foregroundClassName, focusClassName, caretHandle, keyboardState);
+            }
+
+            var automationProcessId = GetAutomationProcessId(focused);
+            if (automationProcessId != 0 && automationProcessId != processId)
+            {
+                return EmptyDiagnostics(foregroundClassName, focusClassName, caretHandle, keyboardState);
+            }
+
+            var controlType = GetAutomationControlType(focused);
+            var automationClassName = GetAutomationStringProperty(focused, AutomationElement.ClassNameProperty);
+            var automationId = GetAutomationStringProperty(focused, AutomationElement.AutomationIdProperty);
+            var isKeyboardFocusable = GetAutomationBoolProperty(focused, AutomationElement.IsKeyboardFocusableProperty);
+            var isEnabled = GetAutomationBoolProperty(focused, AutomationElement.IsEnabledProperty, defaultValue: true);
+            var supportsValuePattern = TryGetValuePattern(focused, out var valuePattern);
+            var supportsTextPattern = TryGetPattern(focused, TextPattern.Pattern);
+            var valuePatternReadonly = supportsValuePattern && valuePattern?.Current.IsReadOnly == true;
+            var editableCandidate =
+                isEnabled &&
+                (isKeyboardFocusable || focusClassName.Contains("Chrome", StringComparison.OrdinalIgnoreCase) || focusClassName.Contains("WebView", StringComparison.OrdinalIgnoreCase)) &&
+                ((controlType == ControlType.Edit.ProgrammaticName) ||
+                 (supportsValuePattern && !valuePatternReadonly) ||
+                 (supportsTextPattern && HasEditableAutomationHint(controlType, automationClassName, focusClassName)));
+
+            return new InputTargetDiagnostics(
+                foregroundClassName,
+                focusClassName,
+                caretHandle,
+                controlType,
+                automationClassName,
+                automationId,
+                isKeyboardFocusable,
+                isEnabled,
+                supportsValuePattern,
+                supportsTextPattern,
+                editableCandidate,
+                keyboardState,
+                "UIA");
+        }
+        catch
+        {
+            return EmptyDiagnostics(foregroundClassName, focusClassName, caretHandle, keyboardState);
+        }
+    }
+
+    private static InputTargetDiagnostics EmptyDiagnostics(string foregroundClassName, string focusClassName, IntPtr caretHandle, string keyboardState) =>
+        new(
+            foregroundClassName,
+            focusClassName,
+            caretHandle,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            false,
+            true,
+            false,
+            false,
+            false,
+            keyboardState);
+
+    private static bool HasEditableAutomationHint(string controlType, string automationClassName, string focusClassName) =>
+        controlType == ControlType.Document.ProgrammaticName ||
+        controlType == ControlType.Pane.ProgrammaticName ||
+        controlType == ControlType.Custom.ProgrammaticName ||
+        automationClassName.Contains("Edit", StringComparison.OrdinalIgnoreCase) ||
+        focusClassName.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
+        focusClassName.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
+        focusClassName.Contains("Internet Explorer_Server", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetAutomationControlType(AutomationElement element)
+    {
+        try
+        {
+            return element.Current.ControlType?.ProgrammaticName ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static int GetAutomationProcessId(AutomationElement element)
+    {
+        try
+        {
+            return element.Current.ProcessId;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static string GetAutomationStringProperty(AutomationElement element, AutomationProperty property)
+    {
+        try
+        {
+            var value = element.GetCurrentPropertyValue(property, ignoreDefaultValue: true);
+            return value as string ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool GetAutomationBoolProperty(AutomationElement element, AutomationProperty property, bool defaultValue = false)
+    {
+        try
+        {
+            var value = element.GetCurrentPropertyValue(property, ignoreDefaultValue: true);
+            return value is bool boolean ? boolean : defaultValue;
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    private static bool TryGetPattern(AutomationElement element, AutomationPattern pattern)
+    {
+        try
+        {
+            return element.TryGetCurrentPattern(pattern, out _);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetValuePattern(AutomationElement element, out ValuePattern? valuePattern)
+    {
+        valuePattern = null;
+        try
+        {
+            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern) && pattern is ValuePattern typedPattern)
+            {
+                valuePattern = typedPattern;
+                return true;
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
 
     private static bool IsNativeEditClass(string className) =>
         className.Equals("Edit", StringComparison.OrdinalIgnoreCase) ||
@@ -272,7 +504,50 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         throw new InvalidOperationException("Clipboard is busy; text could not be copied.", lastError);
     }
 
-    private static uint SendCtrlV()
+    private static bool WaitForBlockingModifiersToClear()
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(300);
+        do
+        {
+            if (!HasBlockingModifierKeys(GetAsyncKeyState))
+            {
+                return true;
+            }
+
+            Thread.Sleep(20);
+        }
+        while (DateTime.UtcNow < deadline);
+
+        return false;
+    }
+
+    internal static bool HasBlockingModifierKeys(Func<int, short> keyStateProvider) =>
+        BlockingPasteModifiers.Any(key => IsKeyDown(keyStateProvider(key)));
+
+    internal static bool IsKeyDown(short keyState) => (keyState & unchecked((short)0x8000)) != 0;
+
+    private static string DescribeBlockingModifierState()
+    {
+        var down = BlockingPasteModifiers
+            .Where(key => IsKeyDown(GetAsyncKeyState(key)))
+            .Select(DescribeVirtualKey)
+            .ToArray();
+        return down.Length == 0 ? "Released" : string.Join("+", down);
+    }
+
+    private static string DescribeVirtualKey(int virtualKey) =>
+        virtualKey switch
+        {
+            VK_MENU => "Alt",
+            VK_RMENU => "RightAlt",
+            VK_LCONTROL => "LeftCtrl",
+            VK_RCONTROL => "RightCtrl",
+            VK_LWIN => "LeftWin",
+            VK_RWIN => "RightWin",
+            _ => $"VK{virtualKey:X2}"
+        };
+
+    private static KeyboardPasteAttemptResult SendCtrlV()
     {
         var inputs = new[]
         {
@@ -282,7 +557,8 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             KeyboardInput(VK_CONTROL, KEYEVENTF_KEYUP)
         };
 
-        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        var sentEvents = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        return new KeyboardPasteAttemptResult(sentEvents, Marshal.GetLastWin32Error(), true);
     }
 
     private static INPUT KeyboardInput(ushort key, uint flags) =>
@@ -371,6 +647,9 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);

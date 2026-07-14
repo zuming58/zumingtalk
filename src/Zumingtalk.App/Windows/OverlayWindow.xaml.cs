@@ -17,6 +17,7 @@ public partial class OverlayWindow : Window
     private const uint SWP_SHOWWINDOW = 0x0040;
     private static readonly IntPtr HWND_TOPMOST = new(-1);
     private double smoothedLevel;
+    private DictationState currentState = DictationState.Idle;
 
     public OverlayWindow()
     {
@@ -34,7 +35,8 @@ public partial class OverlayWindow : Window
 
     public void ApplyState(DictationState state)
     {
-        WavePanel.Visibility = state == DictationState.Recording ? Visibility.Visible : Visibility.Collapsed;
+        currentState = state;
+        SyncRecordingVisualization();
         DotsPanel.Visibility = state == DictationState.Recognizing ? Visibility.Visible : Visibility.Collapsed;
         ResultGlyph.Visibility = state is DictationState.Completed or DictationState.Saved or DictationState.InsertionBlocked or DictationState.Failed
             ? Visibility.Visible
@@ -43,15 +45,32 @@ public partial class OverlayWindow : Window
 
     public void SetAudioLevel(double level)
     {
-        smoothedLevel = (smoothedLevel * 0.72) + (Math.Clamp(level, 0d, 1d) * 0.28);
-        var scale = 0.18 + smoothedLevel;
+        smoothedLevel = Math.Clamp(level, 0d, 1d);
+        SyncRecordingVisualization();
 
-        WaveBar1.Height = 8 + (10 * scale);
-        WaveBar2.Height = 12 + (14 * scale);
-        WaveBar3.Height = 16 + (18 * scale);
-        WaveBar4.Height = 10 + (15 * scale);
-        WaveBar5.Height = 7 + (11 * scale);
+        if (smoothedLevel <= 0)
+        {
+            return;
+        }
+
+        var weights = new[] { 0.55, 0.85, 1.0, 0.75, 0.50 };
+        WaveBar1.Height = CalculateBarHeight(smoothedLevel, weights[0]);
+        WaveBar2.Height = CalculateBarHeight(smoothedLevel, weights[1]);
+        WaveBar3.Height = CalculateBarHeight(smoothedLevel, weights[2]);
+        WaveBar4.Height = CalculateBarHeight(smoothedLevel, weights[3]);
+        WaveBar5.Height = CalculateBarHeight(smoothedLevel, weights[4]);
     }
+
+    private void SyncRecordingVisualization()
+    {
+        var showSpeech = currentState == DictationState.Recording && smoothedLevel > 0.01;
+        var showSilence = currentState == DictationState.Recording && !showSpeech;
+        WavePanel.Visibility = showSpeech ? Visibility.Visible : Visibility.Collapsed;
+        SilenceLine.Visibility = showSilence ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static double CalculateBarHeight(double level, double weight) =>
+        4 + (24 * Math.Clamp(level * weight, 0d, 1d));
 
     public void PositionOverWorkArea(PhysicalWorkArea workArea, uint dpi, double bottomMarginDip = 12)
     {

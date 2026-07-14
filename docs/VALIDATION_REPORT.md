@@ -1,3 +1,39 @@
+# 祖名闪电说 v0.6.2 R2 审计与验收报告
+
+日期：2026-07-14
+
+## v0.6.2 R2 最新结论
+
+本轮基于 `codex/v0.6.1-integrated-handoff` 的 `9d3f3e49b875d9c4aa419ae91c9b086817f2d396` 继续开发，保留百炼 `BailianFunAsrProvider.cs`，没有回退到旧 `audit/v0.6.1-capsule-codex-settings` 基线。
+
+已完成：
+
+- 胶囊窗口调整为 `184×50 DIP`，静音显示 `28×2` 横线，说话波形由 RMS/dBFS、噪声门、迟滞和快攻慢释驱动。
+- 状态文案统一为 `已写入 / 已保存 / 已复制 / 识别失败`；自动写入未确认时显示“已复制”，不再用“未能写入”作为最终胶囊标签。
+- 写入前重新调用 `GetGUIThreadInfo`，同一顶层窗口内焦点控件变化也判定为 `Lost`；`Lost` 只保存历史，不覆盖剪贴板。
+- 增加不记录文字内容的目标诊断：Win32 前台/焦点类名、UI Automation 控件类型/类名/AutomationId、Value/Text Pattern 支持、键盘修饰键状态、写入策略、SendInput 事件数和 Win32 错误码。
+- 增加 UI Automation 目标识别，不按进程名白名单判断微信或 Codex；候选目标由 Win32 类、UIA 控件类型、Pattern 支持和可聚焦/启用状态共同判定。
+- `Ctrl+V`/`SendInput` 前最多等待 300ms，确认 Alt、右 Alt、Ctrl、Win 等修饰键释放；若仍按下则不发送模拟按键，降级为复制兜底。
+- 保留独立 `RegisterHotKey` 备用热键路径；注册结果继续显示在设置页。
+- 程序版本更新为 `0.6.2 / 0.6.2.0`。
+
+自动验证：
+
+- `dotnet build Zumingtalk.sln -c Release --no-incremental`：通过，0 warning，0 error。
+- `dotnet test Zumingtalk.sln -c Release --no-build`：通过，31 passed，0 failed，0 skipped。
+- 发布目录：`artifacts/publish/v0.6.2-win-x64`
+- 测试包：`artifacts/publish/Zumingtalk-v0.6.2-win-x64.zip`
+- ZIP SHA-256：`40ACA929A7B88A0BDD11D62173912800FF58B3F3DA0BB389C13F01750457DA99`
+
+仍需用户真人环境复测：
+
+- 填写真实百炼 API Key 后，验证真实麦克风、实时识别和录音保留。
+- 在记事本、浏览器、VS Code、Codex、微信中分别执行短按右 Alt 听写，截图设置页“最近目标”诊断信息。
+- 分别在 360 开启/关闭状态下验证主热键、备用热键、自动写入、复制兜底和历史保存。
+- 对微信/Codex：若仍无法写入，应确认胶囊最终状态为“已复制”或“已保存”，历史记录存在，剪贴板行为符合 PRD。
+
+---
+
 # 祖名闪电说 v0.6.1 审计与验收报告
 
 日期：2026-07-14

@@ -21,9 +21,29 @@ public sealed record CapturedInputTarget(
     string ProcessName,
     string IntegrityLevel,
     string ClassName = "",
-    bool IsElevated = false);
+    bool IsElevated = false,
+    InputTargetDiagnostics? Diagnostics = null);
+
+public sealed record InputTargetDiagnostics(
+    string ForegroundClassName,
+    string FocusClassName,
+    IntPtr CaretHandle,
+    string AutomationControlType,
+    string AutomationClassName,
+    string AutomationId,
+    bool AutomationIsKeyboardFocusable,
+    bool AutomationIsEnabled,
+    bool SupportsValuePattern,
+    bool SupportsTextPattern,
+    bool IsEditableCandidate,
+    string KeyboardState,
+    string Strategy = "",
+    uint SendInputEvents = 0,
+    int LastWin32Error = 0,
+    bool KeepsClipboardFallback = false);
 
 public sealed record TextInsertionResult(
     bool Succeeded,
     TextInsertionMethod Method,
-    string Message);
+    string Message,
+    InputTargetDiagnostics? Diagnostics = null);

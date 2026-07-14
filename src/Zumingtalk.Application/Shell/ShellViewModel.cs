@@ -34,6 +34,7 @@ public sealed class ShellViewModel : ObservableObject
     private string primaryHotkeyStatusText = "未启动";
     private string fallbackHotkeyStatusText = "未启动";
     private string lastCapturedTargetText = "尚未捕获";
+    private string lastTargetDiagnosticsText = "尚未采集诊断";
     private string lastInsertionMethodText = "尚未写入";
     private string lastInsertionStatusText = "尚未写入";
     private bool isBackToTopVisible;
@@ -278,6 +279,12 @@ public sealed class ShellViewModel : ObservableObject
         private set => SetProperty(ref lastCapturedTargetText, value);
     }
 
+    public string LastTargetDiagnosticsText
+    {
+        get => lastTargetDiagnosticsText;
+        private set => SetProperty(ref lastTargetDiagnosticsText, value);
+    }
+
     public string LastInsertionMethodText
     {
         get => lastInsertionMethodText;
@@ -402,6 +409,7 @@ public sealed class ShellViewModel : ObservableObject
             InputTargetKind.Lost => "目标已丢失",
             _ => "尚未捕获"
         };
+        LastTargetDiagnosticsText = FormatTargetDiagnostics(target);
     }
 
     public void UpdateInsertionResult(TextInsertionResult result)
@@ -418,12 +426,42 @@ public sealed class ShellViewModel : ObservableObject
 
         LastInsertionStatusText = result.Succeeded
             ? "已确认写入"
-            : result.Method == TextInsertionMethod.SendInputPaste
-                ? "已尝试写入"
-                : result.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.CopyOnly
-                    ? "文字已复制"
-                    : "仅保存历史";
+            : result.Method is TextInsertionMethod.SendInputPaste or TextInsertionMethod.CopyFallback or TextInsertionMethod.CopyOnly
+                ? "文字已复制"
+                : "仅保存历史";
+
+        if (result.Diagnostics is not null)
+        {
+            LastTargetDiagnosticsText = FormatInputTargetDiagnostics(result.Diagnostics);
+        }
     }
+
+    private static string FormatTargetDiagnostics(CapturedInputTarget target)
+    {
+        var process = string.IsNullOrWhiteSpace(target.ProcessName) ? "Unknown" : target.ProcessName;
+        if (target.Diagnostics is null)
+        {
+            return $"{process} | Win32={target.ClassName} | PID={target.ProcessId}";
+        }
+
+        return $"{process} | {FormatInputTargetDiagnostics(target.Diagnostics)}";
+    }
+
+    private static string FormatInputTargetDiagnostics(InputTargetDiagnostics diagnostics)
+    {
+        var controlType = string.IsNullOrWhiteSpace(diagnostics.AutomationControlType)
+            ? "UIA=N/A"
+            : diagnostics.AutomationControlType.Replace("ControlType.", "UIA=");
+        var patterns = $"Value={BoolText(diagnostics.SupportsValuePattern)} Text={BoolText(diagnostics.SupportsTextPattern)}";
+        var editable = diagnostics.IsEditableCandidate ? "候选可编辑" : "非编辑候选";
+        var strategy = string.IsNullOrWhiteSpace(diagnostics.Strategy) ? "Strategy=Capture" : $"Strategy={diagnostics.Strategy}";
+        var sendInput = diagnostics.SendInputEvents > 0 ? $" SendInput={diagnostics.SendInputEvents}" : string.Empty;
+        var error = diagnostics.LastWin32Error != 0 ? $" Win32={diagnostics.LastWin32Error}" : string.Empty;
+        var fallback = diagnostics.KeepsClipboardFallback ? " Clipboard=保留最终文字" : string.Empty;
+        return $"FG={diagnostics.ForegroundClassName} Focus={diagnostics.FocusClassName} {controlType} Class={diagnostics.AutomationClassName} {patterns} {editable} Keys={diagnostics.KeyboardState} {strategy}{sendInput}{error}{fallback}";
+    }
+
+    private static string BoolText(bool value) => value ? "Y" : "N";
 
     internal async Task RetranscribeRecordAsync(TranscriptionRecordViewModel recordViewModel, CancellationToken cancellationToken)
     {
@@ -764,7 +802,7 @@ public sealed class ShellViewModel : ObservableObject
             var message = result.Method switch
             {
                 _ when result.Succeeded => "自动写入测试成功",
-                TextInsertionMethod.SendInputPaste => "已尝试自动写入，测试文字保留在剪贴板",
+                TextInsertionMethod.SendInputPaste => "未能确认自动写入，测试文字已复制，可直接粘贴",
                 TextInsertionMethod.CopyFallback => "自动写入受阻，测试文字已复制",
                 TextInsertionMethod.Auto => "未捕获到原输入框，请重新测试",
                 _ => "未确认自动写入，请查看目标输入框"

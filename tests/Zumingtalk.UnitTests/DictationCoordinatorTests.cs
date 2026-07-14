@@ -66,6 +66,40 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
+    public void AudioLevelMeter_ReportsSilence_ForZeroPcm()
+    {
+        var meter = new Infrastructure.Audio.AudioLevelMeter();
+        var silence = new byte[1600];
+
+        var level = meter.ProcessPcm16Mono(silence, 16000);
+
+        Assert.Equal(0d, level);
+    }
+
+    [Fact]
+    public void AudioLevelMeter_HandlesMinimumSampleWithoutOverflow()
+    {
+        var dbfs = Infrastructure.Audio.AudioLevelMeter.CalculateDbfs(BitConverter.GetBytes(short.MinValue));
+
+        Assert.True(double.IsFinite(dbfs));
+        Assert.InRange(dbfs, -0.001, 0.001);
+    }
+
+    [Fact]
+    public void AudioLevelMeter_DropsToSilence_AfterHysteresisWindow()
+    {
+        var meter = new Infrastructure.Audio.AudioLevelMeter();
+        var speech = Enumerable.Range(0, 800).SelectMany(_ => BitConverter.GetBytes((short)9000)).ToArray();
+        var quiet = Enumerable.Range(0, 4000).SelectMany(_ => BitConverter.GetBytes((short)8)).ToArray();
+
+        var speechLevel = meter.ProcessPcm16Mono(speech, 16000);
+        var quietLevel = meter.ProcessPcm16Mono(quiet, 16000);
+
+        Assert.True(speechLevel > 0);
+        Assert.Equal(0d, quietLevel);
+    }
+
+    [Fact]
     public async Task BailianProvider_FailsClearly_WhenApiKeyIsMissing()
     {
         var provider = new BailianFunAsrProvider(new Domain.Settings.BailianCredentialSettings(string.Empty));
@@ -185,6 +219,46 @@ public sealed class DictationCoordinatorTests
 
         Assert.False(result.Succeeded);
         Assert.Equal(TextInsertionMethod.CopyFallback, result.Method);
+    }
+
+    [Fact]
+    public void TextInsertion_KeyboardPaste_DiagnosticsKeepClipboardFallback()
+    {
+        var diagnostics = new InputTargetDiagnostics(
+            "Chrome_WidgetWin_1",
+            "Chrome_RenderWidgetHostHWND",
+            IntPtr.Zero,
+            "ControlType.Edit",
+            "Chrome",
+            string.Empty,
+            true,
+            true,
+            true,
+            true,
+            true,
+            "Released");
+
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(
+            new WindowsTextInsertionService.KeyboardPasteAttemptResult(
+                WindowsTextInsertionService.ExpectedCtrlVEventCount,
+                0,
+                true),
+            diagnostics);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.SendInputPaste, result.Method);
+        Assert.NotNull(result.Diagnostics);
+        Assert.True(result.Diagnostics.KeepsClipboardFallback);
+        Assert.Equal((uint)WindowsTextInsertionService.ExpectedCtrlVEventCount, result.Diagnostics.SendInputEvents);
+    }
+
+    [Fact]
+    public void TextInsertion_BlockingModifierKeys_AreDetectedBeforePaste()
+    {
+        short KeyState(int key) => key == 0xA5 ? unchecked((short)0x8000) : (short)0;
+
+        Assert.True(WindowsTextInsertionService.HasBlockingModifierKeys(KeyState));
+        Assert.False(WindowsTextInsertionService.HasBlockingModifierKeys(_ => 0));
     }
 
     [Fact]
