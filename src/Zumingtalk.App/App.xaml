@@ -80,12 +80,15 @@
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
             <Setter Property="MinHeight" Value="42" />
+            <Setter Property="MinWidth" Value="104" />
             <Setter Property="Padding" Value="18,0" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="BorderBrush" Value="#2D68EA" />
             <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -93,8 +96,10 @@
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}"
                                 CornerRadius="10">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -105,6 +110,21 @@
             <Setter Property="BorderBrush" Value="#CFDEF3" />
             <Setter Property="Background" Value="White" />
             <Setter Property="Foreground" Value="#31527F" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Padding" Value="12,0,34,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
     </Application.Resources>
 </Application>

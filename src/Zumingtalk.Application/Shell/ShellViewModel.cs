@@ -35,6 +35,9 @@ public sealed class ShellViewModel : ObservableObject
     private string aliyunAccessKeySecret = string.Empty;
     private string primaryHotkeyStatusText = "未启动";
     private string fallbackHotkeyStatusText = "未启动";
+    private string lastCapturedTargetText = "尚未捕获";
+    private string lastInsertionMethodText = "尚未写入";
+    private string lastInsertionStatusText = "尚未写入";
     private bool isBackToTopVisible;
     private MicrophoneDevice? selectedMicrophone;
 
@@ -275,6 +278,24 @@ public sealed class ShellViewModel : ObservableObject
     {
         get => fallbackHotkeyStatusText;
         private set => SetProperty(ref fallbackHotkeyStatusText, value);
+    }
+
+    public string LastCapturedTargetText
+    {
+        get => lastCapturedTargetText;
+        private set => SetProperty(ref lastCapturedTargetText, value);
+    }
+
+    public string LastInsertionMethodText
+    {
+        get => lastInsertionMethodText;
+        private set => SetProperty(ref lastInsertionMethodText, value);
+    }
+
+    public string LastInsertionStatusText
+    {
+        get => lastInsertionStatusText;
+        private set => SetProperty(ref lastInsertionStatusText, value);
     }
 
     public bool IsBackToTopVisible
@@ -714,8 +735,11 @@ public sealed class ShellViewModel : ObservableObject
             }
 
             var target = textInsertionService.CaptureCurrentTarget();
+            UpdateCapturedTarget(target);
             target = textInsertionService.ValidateCapturedTarget(target);
+            UpdateCapturedTarget(target);
             var result = await textInsertionService.InsertAsync(target, testText, CancellationToken.None);
+            UpdateInsertionResult(result);
             ShowToast(result.Succeeded ? "自动写入测试成功" : "自动写入未确认，测试文字已复制", result.Succeeded ? ToastKind.Success : ToastKind.Info);
         }
         catch (Exception ex)
@@ -822,6 +846,38 @@ public sealed class ShellViewModel : ObservableObject
 
     private static string FormatWin32Error(int? errorCode) =>
         errorCode is null or 0 ? string.Empty : $"（Win32 {errorCode}）";
+
+    public void UpdateCapturedTarget(CapturedInputTarget target)
+    {
+        LastCapturedTargetText = target.Kind switch
+        {
+            InputTargetKind.Editable => string.IsNullOrWhiteSpace(target.ProcessName) ? "可编辑目标" : target.ProcessName,
+            InputTargetKind.None => "无输入目标",
+            InputTargetKind.Lost => "目标已丢失",
+            _ => "尚未捕获"
+        };
+    }
+
+    public void UpdateInsertionResult(TextInsertionResult result)
+    {
+        LastInsertionMethodText = result.Method switch
+        {
+            TextInsertionMethod.NativeReplaceSelection => "原生插入",
+            TextInsertionMethod.PasteMessage => "粘贴消息",
+            TextInsertionMethod.SendInputPaste => "键盘粘贴",
+            TextInsertionMethod.CopyFallback => "复制兜底",
+            TextInsertionMethod.CopyOnly => "仅复制",
+            _ => "自动选择"
+        };
+
+        LastInsertionStatusText = result.Succeeded
+            ? "已确认写入"
+            : result.Method == TextInsertionMethod.SendInputPaste
+                ? "已尝试写入"
+                : result.Method == TextInsertionMethod.CopyFallback
+                    ? "已复制兜底"
+                    : "已保存历史";
+    }
 }
 
 public sealed record ToastViewModel(string Message, ToastKind Kind, bool ShowUndo = false);

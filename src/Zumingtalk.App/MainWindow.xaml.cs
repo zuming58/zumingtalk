@@ -205,6 +205,7 @@ public partial class MainWindow : Window
             asrSession = null;
             asrStartupTask = null;
             capturedTarget = textInsertionService.CaptureCurrentTarget();
+            viewModel.UpdateCapturedTarget(capturedTarget);
             pendingPcmChunks.Clear();
             audioRecorder.PcmAudioAvailable += OnPcmAudioAvailable;
             await audioRecorder.StartAsync(dictationCts.Token);
@@ -255,13 +256,16 @@ public partial class MainWindow : Window
                 var insertion = await textInsertionService.CopyOnlyAsync(finalText, cancellationToken);
                 insertionMethod = insertion.Method;
                 insertionBlocked = true;
+                viewModel.UpdateInsertionResult(insertion);
             }
             else if (succeeded && !string.IsNullOrWhiteSpace(finalText) && capturedTarget is not null)
             {
                 var insertion = await TryInsertFinalTextAsync(capturedTarget, finalText, cancellationToken);
                 insertionMethod = insertion.Method;
                 inserted = insertion.Succeeded;
-                insertionBlocked = !insertion.Succeeded && insertion.Method == TextInsertionMethod.CopyFallback;
+                insertionBlocked = !insertion.Succeeded &&
+                    insertion.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.SendInputPaste;
+                viewModel.UpdateInsertionResult(insertion);
             }
 
             var record = new TranscriptionRecord(
@@ -387,6 +391,7 @@ public partial class MainWindow : Window
     private async Task<TextInsertionResult> TryInsertFinalTextAsync(CapturedInputTarget target, string finalText, CancellationToken cancellationToken)
     {
         target = textInsertionService.ValidateCapturedTarget(target);
+        viewModel.UpdateCapturedTarget(target);
         if (target.Kind == InputTargetKind.Lost)
         {
             return new TextInsertionResult(false, TextInsertionMethod.Auto, "Captured target was lost; history only.");
@@ -398,10 +403,12 @@ public partial class MainWindow : Window
         }
 
         var result = await textInsertionService.InsertAsync(target, finalText, cancellationToken);
-        if (!result.Succeeded && result.Method == TextInsertionMethod.CopyFallback)
+        if (!result.Succeeded && result.Method is TextInsertionMethod.CopyFallback or TextInsertionMethod.SendInputPaste)
         {
             viewModel.OverlayState = DictationState.InsertionBlocked;
-            viewModel.Toast = new ToastViewModel("未能自动写入，文字已复制", ToastKind.Info);
+            viewModel.Toast = new ToastViewModel(result.Method == TextInsertionMethod.SendInputPaste
+                ? "已尝试自动写入，文字保留在剪贴板"
+                : "未能自动写入，文字已复制", ToastKind.Info);
         }
 
         return result;
@@ -655,31 +662,49 @@ public partial class MainWindow : Window
         if (!overlayWindow.IsVisible)
         {
             overlayWindow.Show();
+            PositionOverlay();
         }
     }
 
     private void PositionOverlay()
     {
-        var workArea = GetForegroundMonitorWorkArea();
-        overlayWindow.Left = workArea.Left + (workArea.Width - overlayWindow.Width) / 2;
-        overlayWindow.Top = workArea.Bottom - overlayWindow.Height - 12;
+        var foreground = GetForegroundWindow();
+        var workArea = GetForegroundMonitorWorkArea(foreground);
+        overlayWindow.PositionOverWorkArea(workArea, GetDpiForTargetWindow(foreground));
     }
 
-    private static Rect GetForegroundMonitorWorkArea()
+    private static PhysicalWorkArea GetForegroundMonitorWorkArea(IntPtr foreground)
     {
-        var foreground = GetForegroundWindow();
         var monitor = MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
         {
-            return new Rect(
+            return new PhysicalWorkArea(
                 info.rcWork.Left,
                 info.rcWork.Top,
-                info.rcWork.Right - info.rcWork.Left,
-                info.rcWork.Bottom - info.rcWork.Top);
+                info.rcWork.Right,
+                info.rcWork.Bottom);
         }
 
-        return SystemParameters.WorkArea;
+        var workArea = SystemParameters.WorkArea;
+        return new PhysicalWorkArea(
+            (int)Math.Round(workArea.Left),
+            (int)Math.Round(workArea.Top),
+            (int)Math.Round(workArea.Right),
+            (int)Math.Round(workArea.Bottom));
+    }
+
+    private static uint GetDpiForTargetWindow(IntPtr targetWindow)
+    {
+        try
+        {
+            var dpi = targetWindow == IntPtr.Zero ? 0 : GetDpiForWindow(targetWindow);
+            return dpi == 0 ? 96 : dpi;
+        }
+        catch
+        {
+            return 96;
+        }
     }
 
     private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
@@ -693,6 +718,9 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MONITORINFO

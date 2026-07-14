@@ -165,6 +165,24 @@ public sealed class DictationCoordinatorTests
         Assert.False(result.KeepClipboardFallback);
     }
 
+    [Fact]
+    public void TextInsertion_ChromiumClasses_RequireKeyboardPaste()
+    {
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("Chrome_WidgetWin_1"));
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("WebViewHost"));
+        Assert.True(WindowsTextInsertionService.RequiresKeyboardPaste("HwndWrapper[Zumingtalk]"));
+    }
+
+    [Fact]
+    public void TextInsertion_KeyboardPasteAttempt_IsNotReportedAsVerifiedInsertion()
+    {
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(WindowsTextInsertionService.ExpectedCtrlVEventCount);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.SendInputPaste, result.Method);
+        Assert.Contains("attempted", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class FakeAudioRecorder : IAudioRecorder
     {
         public event EventHandler<AudioLevelChangedEventArgs>? LevelChanged;

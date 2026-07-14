@@ -12,6 +12,10 @@ public partial class OverlayWindow : Window
     private const int WS_EX_NOACTIVATE = 0x08000000;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_NOOWNERZORDER = 0x0200;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
     private double smoothedLevel;
 
     public OverlayWindow()
@@ -49,9 +53,34 @@ public partial class OverlayWindow : Window
         WaveBar5.Height = 7 + (11 * scale);
     }
 
+    public void PositionOverWorkArea(PhysicalWorkArea workArea, uint dpi)
+    {
+        var handle = EnsureHandle();
+        var scale = dpi <= 0 ? 1d : dpi / 96d;
+        var width = (int)Math.Round(Width * scale);
+        var height = (int)Math.Round(Height * scale);
+        var x = workArea.Left + ((workArea.Width - width) / 2);
+        var y = workArea.Bottom - height - (int)Math.Round(12 * scale);
+
+        _ = SetWindowPos(handle, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+    }
+
+    private IntPtr EnsureHandle() => new WindowInteropHelper(this).EnsureHandle();
+
     [DllImport("user32.dll")]
     private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     [DllImport("user32.dll")]
     private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+}
+
+public readonly record struct PhysicalWorkArea(int Left, int Top, int Right, int Bottom)
+{
+    public int Width => Right - Left;
+
+    public int Height => Bottom - Top;
 }

@@ -69,8 +69,14 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         if (target.IsElevated)
         {
-            Clipboard.SetText(text);
+            SetClipboardTextWithRetry(text);
             return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target is elevated; text copied for manual paste."));
+        }
+
+        if (RequiresKeyboardPaste(target.ClassName))
+        {
+            var sentEvents = TryKeyboardClipboardPaste(text);
+            return Task.FromResult(EvaluateKeyboardPasteAttempt(sentEvents));
         }
 
         var pasted = TryClipboardPaste(target.FocusHandle, text, useWindowMessage: true);
@@ -95,14 +101,14 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, sent.Message));
         }
 
-        Clipboard.SetText(text);
+        SetClipboardTextWithRetry(text);
         return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Automatic insertion was not verified; text copied."));
     }
 
     public Task<TextInsertionResult> CopyOnlyAsync(string text, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Clipboard.SetText(text);
+        SetClipboardTextWithRetry(text);
         return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyOnly, "Copy-only mode; text copied."));
     }
 
@@ -153,10 +159,23 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             : new PasteAttemptResult(false, false, $"{methodName} did not change target text.");
     }
 
+    internal const int ExpectedCtrlVEventCount = 4;
+
+    internal static bool RequiresKeyboardPaste(string className) =>
+        className.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
+        className.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
+        className.Contains("Internet Explorer_Server", StringComparison.OrdinalIgnoreCase) ||
+        className.Contains("HwndWrapper", StringComparison.OrdinalIgnoreCase);
+
+    internal static TextInsertionResult EvaluateKeyboardPasteAttempt(uint sentEvents) =>
+        sentEvents == ExpectedCtrlVEventCount
+            ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.")
+            : new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Keyboard paste was blocked; text kept on clipboard.");
+
     private static PasteAttemptResult TryClipboardPaste(IntPtr focusHandle, string text, bool useWindowMessage)
     {
         var previousText = TryGetClipboardText();
-        Clipboard.SetText(text);
+        SetClipboardTextWithRetry(text);
         var before = GetTextLength(focusHandle);
         var methodName = useWindowMessage ? "WM_PASTE" : "SendInput Ctrl+V";
 
@@ -166,7 +185,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         }
         else
         {
-            SendCtrlV();
+            _ = SendCtrlV();
         }
 
         Thread.Sleep(120);
@@ -175,10 +194,17 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         if (!result.KeepClipboardFallback && previousText is not null)
         {
-            Clipboard.SetText(previousText);
+            SetClipboardTextWithRetry(previousText);
         }
 
         return result;
+    }
+
+    private static uint TryKeyboardClipboardPaste(string text)
+    {
+        SetClipboardTextWithRetry(text);
+        Thread.Sleep(80);
+        return SendCtrlV();
     }
 
     internal sealed record PasteAttemptResult(bool Verified, bool KeepClipboardFallback, string Message);
@@ -226,7 +252,27 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         }
     }
 
-    private static void SendCtrlV()
+    private static void SetClipboardTextWithRetry(string text)
+    {
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return;
+            }
+            catch (Exception ex) when (ex is ExternalException or ThreadStateException)
+            {
+                lastError = ex;
+                Thread.Sleep(50 * (attempt + 1));
+            }
+        }
+
+        throw new InvalidOperationException("Clipboard is busy; text could not be copied.", lastError);
+    }
+
+    private static uint SendCtrlV()
     {
         var inputs = new[]
         {
@@ -236,7 +282,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             KeyboardInput(VK_CONTROL, KEYEVENTF_KEYUP)
         };
 
-        _ = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     private static INPUT KeyboardInput(ushort key, uint flags) =>
