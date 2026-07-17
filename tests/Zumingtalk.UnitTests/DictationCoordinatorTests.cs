@@ -213,6 +213,23 @@ public sealed class DictationCoordinatorTests
     }
 
     [Fact]
+    public void TextInsertion_SendInputStructure_MatchesNativePlatformSize()
+    {
+        Assert.Equal(IntPtr.Size == 8 ? 40 : 28, WindowsTextInsertionService.NativeInputStructureSize);
+    }
+
+    [Theory]
+    [InlineData("Weixin", "Qt51514QWindowIcon", true)]
+    [InlineData("WeChat", "Qt51514QWindowIcon", true)]
+    [InlineData("WXWork", "Qt6QWindowIcon", true)]
+    [InlineData("OtherQtApp", "Qt51514QWindowIcon", false)]
+    [InlineData("Weixin", "Chrome_WidgetWin_1", false)]
+    public void TextInsertion_RecognizesKnownWeChatQtTargets(string processName, string className, bool expected)
+    {
+        Assert.Equal(expected, WindowsTextInsertionService.IsKnownQtKeyboardPasteTarget(processName, className));
+    }
+
+    [Fact]
     public void TextInsertion_KeyboardPaste_KeepsCopyFallback_WhenInputWasBlocked()
     {
         var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(0);
@@ -250,6 +267,22 @@ public sealed class DictationCoordinatorTests
         Assert.NotNull(result.Diagnostics);
         Assert.True(result.Diagnostics.KeepsClipboardFallback);
         Assert.Equal((uint)WindowsTextInsertionService.ExpectedCtrlVEventCount, result.Diagnostics.SendInputEvents);
+    }
+
+    [Fact]
+    public void TextInsertion_KeyboardPaste_IsSuccessful_WhenAutomationVerifiesTextChange()
+    {
+        var result = WindowsTextInsertionService.EvaluateKeyboardPasteAttempt(
+            new WindowsTextInsertionService.KeyboardPasteAttemptResult(
+                WindowsTextInsertionService.ExpectedCtrlVEventCount,
+                0,
+                true,
+                true,
+                true));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(TextInsertionMethod.SendInputPaste, result.Method);
+        Assert.Contains("verified", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

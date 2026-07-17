@@ -50,7 +50,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         var foregroundClassName = GetClassName(foreground);
         var className = GetClassName(targetHandle);
         var automationDiagnostics = CaptureAutomationDiagnostics(foregroundClassName, className, info.hwndCaret, (int)processId);
-        var kind = IsSafeEditableTarget(className, info.hwndCaret != IntPtr.Zero, automationDiagnostics.IsEditableCandidate)
+        var kind = IsSafeEditableTarget(processName, className, info.hwndCaret != IntPtr.Zero, automationDiagnostics.IsEditableCandidate)
             ? InputTargetKind.Editable
             : InputTargetKind.None;
 
@@ -175,7 +175,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
         var currentFocusClassName = GetClassName(currentFocus);
         var diagnostics = CaptureAutomationDiagnostics(GetClassName(foreground), currentFocusClassName, info.hwndCaret, capturedTarget.ProcessId);
-        if (!IsSafeEditableTarget(currentFocusClassName, info.hwndCaret != IntPtr.Zero, diagnostics.IsEditableCandidate))
+        if (!IsSafeEditableTarget(capturedTarget.ProcessName, currentFocusClassName, info.hwndCaret != IntPtr.Zero, diagnostics.IsEditableCandidate))
         {
             return capturedTarget with { Kind = InputTargetKind.Lost, Diagnostics = diagnostics };
         }
@@ -217,10 +217,12 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
                     : attempt.ModifiersReleased ? "SendInput" : "SendInputBlockedByModifier",
                 SendInputEvents = attempt.SentEvents,
                 LastWin32Error = attempt.LastWin32Error,
-                KeepsClipboardFallback = true
+                KeepsClipboardFallback = !attempt.TextChangeVerified
             };
 
-        return attempt.ModifiersReleased && attempt.TargetStillForeground && attempt.SentEvents == ExpectedCtrlVEventCount
+        return attempt.ModifiersReleased && attempt.TargetStillForeground && attempt.SentEvents == ExpectedCtrlVEventCount && attempt.TextChangeVerified
+            ? new TextInsertionResult(true, TextInsertionMethod.SendInputPaste, "Keyboard paste was verified by UI Automation.", resultDiagnostics)
+            : attempt.ModifiersReleased && attempt.TargetStillForeground && attempt.SentEvents == ExpectedCtrlVEventCount
             ? new TextInsertionResult(false, TextInsertionMethod.SendInputPaste, "Keyboard paste was attempted; text kept on clipboard as fallback.", resultDiagnostics)
             : new TextInsertionResult(false, TextInsertionMethod.CopyFallback,
                 attempt.TargetStillForeground
@@ -236,6 +238,8 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
 
     private static KeyboardPasteAttemptResult TryKeyboardClipboardPaste(CapturedInputTarget target, string text)
     {
+        var previousText = TryGetClipboardText();
+        var beforeText = TryGetFocusedAutomationText(target.ProcessId);
         SetClipboardTextWithRetry(text);
         Thread.Sleep(80);
         if (!WaitForBlockingModifiersToClear())
@@ -248,7 +252,21 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return new KeyboardPasteAttemptResult(0, 0, true, false);
         }
 
-        return SendCtrlV();
+        var attempt = SendCtrlV();
+        if (attempt.SentEvents != ExpectedCtrlVEventCount)
+        {
+            return attempt;
+        }
+
+        Thread.Sleep(120);
+        var afterText = TryGetFocusedAutomationText(target.ProcessId);
+        var textChangeVerified = beforeText is not null && afterText is not null && !string.Equals(beforeText, afterText, StringComparison.Ordinal);
+        if (textChangeVerified && previousText is not null)
+        {
+            SetClipboardTextWithRetry(previousText);
+        }
+
+        return attempt with { TextChangeVerified = textChangeVerified };
     }
 
     private static PasteAttemptResult TryClipboardPaste(CapturedInputTarget target, string text, bool useWindowMessage)
@@ -297,7 +315,8 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         uint SentEvents,
         int LastWin32Error,
         bool ModifiersReleased,
-        bool TargetStillForeground = true);
+        bool TargetStillForeground = true,
+        bool TextChangeVerified = false);
 
     private static CapturedInputTarget None(string processName) =>
         new(InputTargetKind.None, IntPtr.Zero, IntPtr.Zero, 0, processName, GetCurrentIntegrityLevel());
@@ -307,6 +326,16 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         automationCandidate ||
         (hasCaret && RequiresKeyboardPaste(className));
 
+    internal static bool IsSafeEditableTarget(string processName, string className, bool hasCaret, bool automationCandidate) =>
+        IsSafeEditableTarget(className, hasCaret, automationCandidate) ||
+        IsKnownQtKeyboardPasteTarget(processName, className);
+
+    internal static bool IsKnownQtKeyboardPasteTarget(string processName, string className) =>
+        className.StartsWith("Qt", StringComparison.OrdinalIgnoreCase) &&
+        (processName.Equals("Weixin", StringComparison.OrdinalIgnoreCase) ||
+         processName.Equals("WeChat", StringComparison.OrdinalIgnoreCase) ||
+         processName.Equals("WXWork", StringComparison.OrdinalIgnoreCase));
+
     internal static bool RequiresKeyboardPaste(string className) =>
         className.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
         className.Contains("WebView", StringComparison.OrdinalIgnoreCase) ||
@@ -314,7 +343,9 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         className.Contains("HwndWrapper", StringComparison.OrdinalIgnoreCase);
 
     private static bool RequiresKeyboardPaste(CapturedInputTarget target) =>
-        RequiresKeyboardPaste(target.ClassName) || target.Diagnostics?.IsEditableCandidate == true;
+        RequiresKeyboardPaste(target.ClassName) ||
+        IsKnownQtKeyboardPasteTarget(target.ProcessName, target.ClassName) ||
+        target.Diagnostics?.IsEditableCandidate == true;
 
     private static bool IsSameForegroundTarget(CapturedInputTarget target)
     {
@@ -585,6 +616,36 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             _ => $"VK{virtualKey:X2}"
         };
 
+    private static string? TryGetFocusedAutomationText(int processId)
+    {
+        try
+        {
+            var focused = AutomationElement.FocusedElement;
+            if (focused is null || GetAutomationProcessId(focused) != processId)
+            {
+                return null;
+            }
+
+            if (focused.TryGetCurrentPattern(ValuePattern.Pattern, out var valuePatternObject) &&
+                valuePatternObject is ValuePattern valuePattern &&
+                !valuePattern.Current.IsReadOnly)
+            {
+                return valuePattern.Current.Value;
+            }
+
+            if (focused.TryGetCurrentPattern(TextPattern.Pattern, out var textPatternObject) &&
+                textPatternObject is TextPattern textPattern)
+            {
+                return textPattern.DocumentRange.GetText(32768);
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
     private static KeyboardPasteAttemptResult SendCtrlV()
     {
         var inputs = new[]
@@ -727,10 +788,12 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         public int Bottom;
     }
 
+    internal static int NativeInputStructureSize => Marshal.SizeOf<INPUT>();
+
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
     {
-        public int type;
+        public uint type;
         public InputUnion union;
     }
 
@@ -738,7 +801,24 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
     private struct InputUnion
     {
         [FieldOffset(0)]
+        public MOUSEINPUT mi;
+
+        [FieldOffset(0)]
         public KEYBDINPUT ki;
+
+        [FieldOffset(0)]
+        public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -749,6 +829,14 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         public uint dwFlags;
         public uint time;
         public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
     }
 
     private enum TOKEN_INFORMATION_CLASS

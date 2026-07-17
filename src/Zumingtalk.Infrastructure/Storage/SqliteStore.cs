@@ -250,11 +250,9 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         var semanticPunctuationText = await GetSettingAsync("semantic_punctuation", cancellationToken)
             ?? await GetSettingAsync("oral_smoothing", cancellationToken)
             ?? "true";
-        var fallbackHotkeyText = await GetSettingAsync("fallback_hotkey_enabled", cancellationToken) ?? "true";
         var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
         _ = bool.TryParse(semanticPunctuationText, out var semanticPunctuationEnabled);
-        _ = bool.TryParse(fallbackHotkeyText, out var fallbackHotkeyEnabled);
         if (!Enum.TryParse<TextInsertionMethod>(insertionModeText, out var preferredMode))
         {
             preferredMode = TextInsertionMethod.Auto;
@@ -268,7 +266,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
                 SemanticPunctuationEnabled: semanticPunctuationEnabled,
                 MicrophoneName: microphoneName,
                 MicrophoneDeviceNumber: microphoneDeviceNumber),
-            new HotkeySettings("右 Alt", fallbackHotkeyEnabled, "Ctrl + Win + Space"),
+            new HotkeySettings("右 Alt", false, string.Empty),
             new CompatibilitySettings("尚未捕获", TextInsertionMethod.Auto, false, preferredMode),
             new LocalDataSettings(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zumingtalk", "recordings"), 3));
     }

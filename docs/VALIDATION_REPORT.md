@@ -1,3 +1,36 @@
+# 祖名闪电说 v0.6.3 自动写入修复与验收报告
+
+日期：2026-07-17
+
+## v0.6.3 最新结论
+
+本轮针对真人测试中“记事本可以写入，但 Codex/Chromium 与微信不能写入”的问题修复自动写入链路：
+
+- 修正 x64 `SendInput` 的原生结构体布局。旧实现的 `INPUT` 联合体缺少 `MOUSEINPUT` 最大成员，传给 Windows 的结构尺寸错误，依赖模拟 `Ctrl+V` 的 Chromium/Electron/Qt 应用会被系统拒绝；记事本走 `EM_REPLACESEL`，因此没有暴露此问题。
+- 对 Codex/Chromium 的 UI Automation `ValuePattern`/`TextPattern` 做写入前后文本比对；能够验证文本变化时才报告“已写入”，无法验证时继续把最终文字留在剪贴板。
+- 新版微信只暴露 `Weixin.exe + Qt...QWindowIcon` 顶层焦点窗口，不提供标准编辑框或插入光标。现对 `Weixin`、`WeChat`、`WXWork` 的 Qt 窗口启用受控键盘粘贴，仍要求原顶层窗口和原进程持续位于前台。
+- 移除设置页中的三键备用热键，并停止注册 `Ctrl + Win + Space`；V1 仅使用右 Alt 启停录音。
+- 程序版本更新为 `0.6.3 / 0.6.3.0`。
+
+自动验证：
+
+- `dotnet build Zumingtalk.sln -c Release --no-incremental`：通过，0 warning，0 error。
+- `dotnet test Zumingtalk.sln -c Release --no-build`：通过，44 passed，0 failed，0 skipped。
+- `dotnet list Zumingtalk.sln package --vulnerable --include-transitive`：未发现已知易受攻击包。
+- 发布目录：`artifacts/publish/v0.6.3-input-compat-win-x64`。
+- 真人测试包：`artifacts/publish/Zumingtalk-v0.6.3-input-compat-win-x64.zip`。
+- EXE ProductVersion：`0.6.3`；FileVersion：`0.6.3.0`。
+- EXE SHA-256：`4FF2EA67A4F5930378F7293A1AE6FDCCFD76937458B3D748D1D3EFA8C8D90A8C`。
+- ZIP SHA-256：`9E7EC09D5E75303F96DAE9B5CC96E0F2C7BDDA318A47B57BA9809F032FF6D3D3`。
+
+仍需真人验收：
+
+- 在真实 Codex 输入框中确认右 Alt 结束后只写入一次最终文字。
+- 在真实微信聊天输入框中确认键盘粘贴生效；由于微信不暴露可读文本接口，程序无法可靠验证接收结果，失败时仍应保留剪贴板和历史记录。
+- 分别测试 360 开启和关闭两种环境，确认右 Alt、目标前台校验和复制兜底行为。
+
+---
+
 # 祖名闪电说 v0.6.2 R2 审计与验收报告
 
 日期：2026-07-14

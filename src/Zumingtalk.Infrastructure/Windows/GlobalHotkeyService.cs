@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using Zumingtalk.Domain.Services;
 
 namespace Zumingtalk.Infrastructure.Windows;
@@ -12,28 +11,17 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
     private const int WM_KEYUP = 0x0101;
     private const int WM_SYSKEYDOWN = 0x0104;
     private const int WM_SYSKEYUP = 0x0105;
-    private const int WM_HOTKEY = 0x0312;
     private const int VK_RMENU = 0xA5;
     private const int VK_ESCAPE = 0x1B;
-    private const int VK_SPACE = 0x20;
-    private const int FALLBACK_HOTKEY_ID = 0x5A10;
-    private const uint MOD_CONTROL = 0x0002;
-    private const uint MOD_WIN = 0x0008;
-    private const uint MOD_NOREPEAT = 0x4000;
 
     private readonly LowLevelKeyboardProc callback;
-    private readonly HotkeyMessageWindow messageWindow = new();
     private IntPtr hookId;
     private bool rightAltDown;
-    private bool fallbackHotkeyEnabled = true;
-    private bool fallbackHotkeyRegistered;
     private int? primaryHookError;
-    private int? fallbackHotkeyError;
 
     public GlobalHotkeyService()
     {
         callback = HookCallback;
-        messageWindow.HotkeyPressed += (_, _) => HotkeyPressed?.Invoke(this, new HotkeyPressedEventArgs(HotkeyAction.ToggleDictation));
     }
 
     public event EventHandler<HotkeyPressedEventArgs>? HotkeyPressed;
@@ -42,10 +30,10 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
     public HotkeyRegistrationStatus RegistrationStatus => new(
         hookId != IntPtr.Zero,
-        fallbackHotkeyEnabled,
-        fallbackHotkeyRegistered,
+        false,
+        false,
         primaryHookError,
-        fallbackHotkeyError);
+        null);
 
     public void Start()
     {
@@ -55,14 +43,13 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
             primaryHookError = hookId == IntPtr.Zero ? Marshal.GetLastWin32Error() : null;
         }
 
-        SyncFallbackHotkeyRegistration();
         NotifyRegistrationStatusChanged();
     }
 
     public void SetFallbackHotkeyEnabled(bool enabled)
     {
-        fallbackHotkeyEnabled = enabled;
-        SyncFallbackHotkeyRegistration();
+        // V1 uses Right Alt only. Kept as a compatibility no-op for existing settings files.
+        NotifyRegistrationStatusChanged();
     }
 
     public void Stop()
@@ -70,12 +57,6 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
         if (hookId != IntPtr.Zero)
         {
             UnhookWindowsHookEx(hookId);
-        }
-
-        if (fallbackHotkeyRegistered)
-        {
-            UnregisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID);
-            fallbackHotkeyRegistered = false;
         }
 
         hookId = IntPtr.Zero;
@@ -86,7 +67,6 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
     public void Dispose()
     {
         Stop();
-        messageWindow.Dispose();
     }
 
     private static IntPtr SetHook(LowLevelKeyboardProc proc)
@@ -94,31 +74,6 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
         using var currentProcess = Process.GetCurrentProcess();
         using var currentModule = currentProcess.MainModule;
         return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(currentModule?.ModuleName), 0);
-    }
-
-    private void SyncFallbackHotkeyRegistration()
-    {
-        if (fallbackHotkeyEnabled && !fallbackHotkeyRegistered)
-        {
-            fallbackHotkeyRegistered = RegisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID, MOD_CONTROL | MOD_WIN | MOD_NOREPEAT, VK_SPACE);
-            fallbackHotkeyError = fallbackHotkeyRegistered ? null : Marshal.GetLastWin32Error();
-        }
-        else if (fallbackHotkeyEnabled && fallbackHotkeyRegistered)
-        {
-            fallbackHotkeyError = null;
-        }
-        else if (!fallbackHotkeyEnabled && fallbackHotkeyRegistered)
-        {
-            UnregisterHotKey(messageWindow.Handle, FALLBACK_HOTKEY_ID);
-            fallbackHotkeyRegistered = false;
-            fallbackHotkeyError = null;
-        }
-        else if (!fallbackHotkeyEnabled)
-        {
-            fallbackHotkeyError = null;
-        }
-
-        NotifyRegistrationStatusChanged();
     }
 
     private void NotifyRegistrationStatusChanged()
@@ -164,32 +119,6 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    private sealed class HotkeyMessageWindow : NativeWindow, IDisposable
-    {
-        public HotkeyMessageWindow()
-        {
-            CreateHandle(new CreateParams());
-        }
-
-        public event EventHandler? HotkeyPressed;
-
-        protected override void WndProc(ref Message m)
-        {
-            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == FALLBACK_HOTKEY_ID)
-            {
-                HotkeyPressed?.Invoke(this, EventArgs.Empty);
-                return;
-            }
-
-            base.WndProc(ref m);
-        }
-
-        public void Dispose()
-        {
-            DestroyHandle();
-        }
-    }
-
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
@@ -203,11 +132,4 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService, IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, int vk);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 }

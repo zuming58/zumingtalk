@@ -60,8 +60,8 @@ public static class MockDataFactory
                 MicrophoneDeviceNumber: 0),
             new HotkeySettings(
                 PrimaryHotkey: "右 Alt",
-                FallbackHotkeyEnabled: true,
-                FallbackHotkey: "Ctrl + Win + Space"),
+                FallbackHotkeyEnabled: false,
+                FallbackHotkey: string.Empty),
             new CompatibilitySettings(
                 LastTargetApplication: "Codex.exe",
                 LastInsertionMethod: TextInsertionMethod.SendInputPaste,
