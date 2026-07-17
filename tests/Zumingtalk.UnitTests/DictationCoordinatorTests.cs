@@ -229,6 +229,19 @@ public sealed class DictationCoordinatorTests
         Assert.Equal(expected, WindowsTextInsertionService.IsKnownQtKeyboardPasteTarget(processName, className));
     }
 
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    public void TextInsertion_OnlyBlocksHigherIntegrityTargets(
+        bool currentProcessElevated,
+        bool targetProcessElevated,
+        bool expected)
+    {
+        Assert.Equal(expected, WindowsTextInsertionService.CanInjectIntoTarget(currentProcessElevated, targetProcessElevated));
+    }
+
     [Fact]
     public void TextInsertion_KeyboardPaste_KeepsCopyFallback_WhenInputWasBlocked()
     {

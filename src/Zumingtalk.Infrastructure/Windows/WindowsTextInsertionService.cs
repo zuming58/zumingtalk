@@ -87,11 +87,12 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
             return Task.FromResult(new TextInsertionResult(true, TextInsertionMethod.NativeReplaceSelection, "Inserted with EM_REPLACESEL.", diagnostics));
         }
 
-        if (target.IsElevated)
+        var currentProcessElevated = IsProcessElevated(Environment.ProcessId);
+        if (!CanInjectIntoTarget(currentProcessElevated, target.IsElevated))
         {
             SetClipboardTextWithRetry(text);
-            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "ElevatedCopyFallback", KeepsClipboardFallback = true };
-            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target is elevated; text copied for manual paste.", diagnostics));
+            var diagnostics = target.Diagnostics is null ? null : target.Diagnostics with { Strategy = "LowerIntegrityCopyFallback", KeepsClipboardFallback = true };
+            return Task.FromResult(new TextInsertionResult(false, TextInsertionMethod.CopyFallback, "Target has higher integrity; text copied for manual paste.", diagnostics));
         }
 
         if (RequiresKeyboardPaste(target))
@@ -335,6 +336,9 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         (processName.Equals("Weixin", StringComparison.OrdinalIgnoreCase) ||
          processName.Equals("WeChat", StringComparison.OrdinalIgnoreCase) ||
          processName.Equals("WXWork", StringComparison.OrdinalIgnoreCase));
+
+    internal static bool CanInjectIntoTarget(bool currentProcessElevated, bool targetProcessElevated) =>
+        !targetProcessElevated || currentProcessElevated;
 
     internal static bool RequiresKeyboardPaste(string className) =>
         className.Contains("Chrome", StringComparison.OrdinalIgnoreCase) ||
@@ -657,7 +661,8 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         };
 
         var sentEvents = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-        return new KeyboardPasteAttemptResult(sentEvents, Marshal.GetLastWin32Error(), true);
+        var lastError = sentEvents == inputs.Length ? 0 : Marshal.GetLastWin32Error();
+        return new KeyboardPasteAttemptResult(sentEvents, lastError, true);
     }
 
     private static INPUT KeyboardInput(ushort key, uint flags) =>
@@ -694,7 +699,7 @@ public sealed class WindowsTextInsertionService : ITextInsertionService
         }
     }
 
-    private static string GetCurrentIntegrityLevel() => "Medium";
+    private static string GetCurrentIntegrityLevel() => IsProcessElevated(Environment.ProcessId) ? "High" : "Medium";
 
     private static bool IsProcessElevated(int processId)
     {
