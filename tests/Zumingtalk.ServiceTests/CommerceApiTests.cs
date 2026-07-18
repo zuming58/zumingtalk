@@ -32,8 +32,8 @@ public sealed class CommerceApiTests(CommerceApiFactory factory) : IClassFixture
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
-        var storedInvite = await db.InviteCodes.SingleAsync();
-        var storedActivation = await db.DeviceActivations.SingleAsync();
+        var storedInvite = await db.InviteCodes.SingleAsync(value => value.CodeHash == SecretHasher.Hash(inviteCode));
+        var storedActivation = await db.DeviceActivations.SingleAsync(value => value.TokenHash == SecretHasher.Hash(activation.DeviceToken));
         Assert.NotEqual(inviteCode, storedInvite.CodeHash);
         Assert.NotEqual(activation.DeviceToken, storedActivation.TokenHash);
         Assert.Equal(64, storedInvite.CodeHash.Length);
@@ -95,6 +95,44 @@ public sealed class CommerceApiTests(CommerceApiFactory factory) : IClassFixture
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task CloudSessionSettlementUsesMonthlyQuotaBeforeAddOnAndIsIdempotent()
+    {
+        var activationId = await CreateActivationWithBucketsAsync(10, 590);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var quota = scope.ServiceProvider.GetRequiredService<QuotaSessionService>();
+        var session = await quota.ReserveAsync(activationId, "wss://service.test/api/asr/stream", CancellationToken.None);
+        await quota.RecordPcmAsync(session.SessionId, activationId, 32_000 * 600, CancellationToken.None);
+
+        var finished = await quota.FinishAsync(session.SessionId, activationId, succeeded: true, CancellationToken.None);
+        var repeated = await quota.FinishAsync(session.SessionId, activationId, succeeded: true, CancellationToken.None);
+        var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
+        var buckets = await db.QuotaBuckets.Where(value => value.ActivationId == activationId).ToListAsync();
+
+        Assert.Equal(600, finished.ChargedSeconds);
+        Assert.Equal(finished, repeated);
+        Assert.Contains(buckets, value => value.Kind == QuotaBucketKind.ProMonthly && value.RemainingSeconds == 0 && value.ReservedSeconds == 0);
+        Assert.Contains(buckets, value => value.Kind == QuotaBucketKind.AddOn && value.RemainingSeconds == 0 && value.ReservedSeconds == 0);
+        Assert.Single(await db.UsageLedger.Where(value => value.SessionId == session.SessionId.ToString("D")).ToListAsync());
+    }
+
+    [Fact]
+    public async Task FailedCloudSessionReleasesQuotaAndInsufficientReservationIsRejected()
+    {
+        var activationId = await CreateActivationWithBucketsAsync(600, 0);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var quota = scope.ServiceProvider.GetRequiredService<QuotaSessionService>();
+        var session = await quota.ReserveAsync(activationId, "wss://service.test/api/asr/stream", CancellationToken.None);
+        await quota.RecordPcmAsync(session.SessionId, activationId, 32_000 * 20, CancellationToken.None);
+        var released = await quota.FinishAsync(session.SessionId, activationId, succeeded: false, CancellationToken.None);
+        var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
+
+        Assert.Equal(0, released.ChargedSeconds);
+        Assert.Equal(600, await db.QuotaBuckets.Where(value => value.ActivationId == activationId).Select(value => value.RemainingSeconds).SingleAsync());
+        Assert.Equal(0, await db.QuotaBuckets.Where(value => value.ActivationId == activationId).Select(value => value.ReservedSeconds).SingleAsync());
+        await Assert.ThrowsAsync<QuotaUnavailableException>(() => quota.ReserveAsync(Guid.NewGuid(), "wss://service.test/api/asr/stream", CancellationToken.None));
+    }
+
     private async Task<string> CreateInviteAsync()
     {
         var response = await AdminPostAsync("/api/admin/invites");
@@ -116,6 +154,38 @@ public sealed class CommerceApiTests(CommerceApiFactory factory) : IClassFixture
         var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
         var tokenHash = SecretHasher.Hash(deviceToken);
         return await db.DeviceActivations.Where(value => value.TokenHash == tokenHash).Select(value => value.Id).SingleAsync();
+    }
+
+    private async Task<Guid> CreateActivationWithBucketsAsync(int monthlySeconds, int addOnSeconds)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
+        var activation = new DeviceActivation
+        {
+            DeviceFingerprintHash = Guid.NewGuid().ToString("N"),
+            TokenHash = Guid.NewGuid().ToString("N"),
+            InviteCodeId = (await db.InviteCodes.Select(value => value.Id).FirstOrDefaultAsync())
+        };
+        if (activation.InviteCodeId == Guid.Empty)
+        {
+            var invite = new InviteCode { CodeHash = Guid.NewGuid().ToString("N"), CreatedAt = DateTimeOffset.UtcNow };
+            db.InviteCodes.Add(invite);
+            activation.InviteCodeId = invite.Id;
+        }
+
+        db.DeviceActivations.Add(activation);
+        if (monthlySeconds > 0)
+        {
+            db.QuotaBuckets.Add(new QuotaBucket { ActivationId = activation.Id, Kind = QuotaBucketKind.ProMonthly, RemainingSeconds = monthlySeconds, ExpiresAt = DateTimeOffset.UtcNow.AddDays(1), CreatedAt = DateTimeOffset.UtcNow });
+        }
+
+        if (addOnSeconds > 0)
+        {
+            db.QuotaBuckets.Add(new QuotaBucket { ActivationId = activation.Id, Kind = QuotaBucketKind.AddOn, RemainingSeconds = addOnSeconds, CreatedAt = DateTimeOffset.UtcNow });
+        }
+
+        await db.SaveChangesAsync();
+        return activation.Id;
     }
 
     private async Task<HttpResponseMessage> AdminPostAsync(string path)
