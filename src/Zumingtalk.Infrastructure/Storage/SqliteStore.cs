@@ -244,6 +244,25 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("bailian_endpoint", credentials.Endpoint, cancellationToken);
     }
 
+    public async Task<VolcengineCredentialSettings> GetVolcengineCredentialsAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        var encryptedApiKey = await GetSettingAsync("volcengine_api_key", cancellationToken);
+        var apiKey = string.IsNullOrWhiteSpace(encryptedApiKey) ? string.Empty : ProtectedSecret.Unprotect(encryptedApiKey);
+        var resourceId = await GetSettingAsync("volcengine_resource_id", cancellationToken) ?? "volc.seedasr.sauc.duration";
+        var endpoint = await GetSettingAsync("volcengine_endpoint", cancellationToken)
+            ?? "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async";
+        return new VolcengineCredentialSettings(apiKey, resourceId, endpoint);
+    }
+
+    public async Task SaveVolcengineCredentialsAsync(VolcengineCredentialSettings credentials, CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        await SetSettingAsync("volcengine_api_key", ProtectedSecret.Protect(credentials.ApiKey), cancellationToken);
+        await SetSettingAsync("volcengine_resource_id", credentials.ResourceId, cancellationToken);
+        await SetSettingAsync("volcengine_endpoint", credentials.Endpoint, cancellationToken);
+    }
+
     public async Task<ZumingtalkCloudCredentialSettings> GetZumingtalkCloudCredentialsAsync(CancellationToken cancellationToken)
     {
         await InitializeAsync(cancellationToken);
@@ -277,6 +296,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
     private async Task<AppSettings> BuildSettingsAsync(Task<BailianCredentialSettings> credentialsTask, CancellationToken cancellationToken)
     {
         var credentials = await credentialsTask;
+        var volcengineCredentials = await GetVolcengineCredentialsAsync(cancellationToken);
         var microphoneName = await GetSettingAsync("microphone_name", cancellationToken) ?? "系统默认麦克风";
         var microphoneDeviceNumberText = await GetSettingAsync("microphone_device_number", cancellationToken) ?? "0";
         var semanticPunctuationText = await GetSettingAsync("semantic_punctuation", cancellationToken)
@@ -284,7 +304,11 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
             ?? "true";
         var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
         var provider = await GetSettingAsync("recognition_provider", cancellationToken)
-            ?? (string.IsNullOrWhiteSpace(credentials.ApiKey) ? "祖名云端识别" : "自有百炼 Key");
+            ?? (!string.IsNullOrWhiteSpace(credentials.ApiKey)
+                ? "自有百炼 Key"
+                : !string.IsNullOrWhiteSpace(volcengineCredentials.ApiKey)
+                    ? "自有火山引擎 Key"
+                    : "祖名云端识别");
         var supportEmail = await GetSettingAsync("support_email", cancellationToken) ?? string.Empty;
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
         _ = bool.TryParse(semanticPunctuationText, out var semanticPunctuationEnabled);

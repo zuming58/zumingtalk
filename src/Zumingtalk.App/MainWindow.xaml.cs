@@ -51,7 +51,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         sqliteStore = new SqliteStore(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new BailianAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService, new ZumingtalkCloudAccountClient(sqliteStore, sqliteStore));
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new AsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService, new ZumingtalkCloudAccountClient(sqliteStore, sqliteStore));
         audioRecorder = new NAudioRecorder(appPaths, () => viewModel.SelectedMicrophone?.DeviceNumber ?? viewModel.Settings.Recognition.MicrophoneDeviceNumber);
 
         InitializeComponent();
@@ -291,7 +291,7 @@ public partial class MainWindow : Window
                 recording.Duration,
                 finalText,
                 recording.AudioPath,
-                "阿里云百炼 Fun-ASR",
+                GetRecognitionProviderName(),
                 activeProviderTaskId,
                 retryCount,
                 finalText.Length,
@@ -604,8 +604,14 @@ public partial class MainWindow : Window
         }
 
         await viewModel.EnsureBringYourOwnKeyAllowedAsync(CancellationToken.None);
-        var credentials = await sqliteStore.GetBailianCredentialsAsync(CancellationToken.None);
-        return new BailianFunAsrProvider(credentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
+        if (viewModel.IsUsingVolcengineRecognition)
+        {
+            var credentials = await sqliteStore.GetVolcengineCredentialsAsync(CancellationToken.None);
+            return new VolcengineBigModelAsrProvider(credentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
+        }
+
+        var bailianCredentials = await sqliteStore.GetBailianCredentialsAsync(CancellationToken.None);
+        return new BailianFunAsrProvider(bailianCredentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
     }
 
     private void OnAudioLevelChanged(object? sender, AudioLevelChangedEventArgs e)
@@ -653,6 +659,21 @@ public partial class MainWindow : Window
             viewModel.BailianApiKey = passwordBox.Password;
         }
     }
+
+    private void OnVolcengineApiKeyPasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.PasswordBox passwordBox)
+        {
+            viewModel.VolcengineApiKey = passwordBox.Password;
+        }
+    }
+
+    private string GetRecognitionProviderName() => viewModel.RecognitionProvider switch
+    {
+        "自有火山引擎 Key" => "火山引擎流式 ASR",
+        "自有百炼 Key" => "阿里云百炼 Fun-ASR",
+        _ => "祖名云端识别"
+    };
 
     private void OnScrollHomeToTop(object sender, RoutedEventArgs e)
     {
@@ -780,8 +801,11 @@ public partial class MainWindow : Window
     }
 }
 
-public sealed class BailianAsrProviderFactory : IAsrProviderFactory
+public sealed class AsrProviderFactory : IAsrProviderFactory
 {
     public IAsrProvider Create(Zumingtalk.Domain.Settings.BailianCredentialSettings credentials, bool semanticPunctuationEnabled) =>
         new BailianFunAsrProvider(credentials, semanticPunctuationEnabled);
+
+    public IAsrProvider Create(Zumingtalk.Domain.Settings.VolcengineCredentialSettings credentials, bool semanticPunctuationEnabled) =>
+        new VolcengineBigModelAsrProvider(credentials, semanticPunctuationEnabled);
 }

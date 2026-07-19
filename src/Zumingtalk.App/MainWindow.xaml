@@ -376,12 +376,17 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="模型" />
-                                        <TextBox Margin="0,8,0,0" IsReadOnly="True" Style="{StaticResource FieldTextBoxStyle}" Text="fun-asr-realtime" />
+                                        <TextBox Margin="0,8,0,0" IsReadOnly="True" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding RecognitionModelName}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsUsingCloudRecognition, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsUsingBailianRecognition, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="百炼 API Key" />
                                         <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnBailianApiKeyPasswordChanged" />
                                         <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="使用华北 2（北京）地域的 API Key；保存后仅显示掩码，不会明文写入数据库。" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsUsingVolcengineRecognition, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="火山引擎 API Key" />
+                                        <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnVolcengineApiKeyPasswordChanged" />
+                                        <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="使用火山引擎语音控制台的 API Key；仅在本机由 Windows DPAPI 加密保存，直接连接火山引擎。" />
                                     </StackPanel>
                                 </Grid>
                                 <Button MinWidth="174" Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />

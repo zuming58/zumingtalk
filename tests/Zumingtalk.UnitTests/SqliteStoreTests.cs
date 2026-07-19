@@ -64,6 +64,28 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task SaveVolcengineCredentialsAsync_DoesNotStoreApiKeyInPlainText()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var credentials = new VolcengineCredentialSettings("test-volc-api-key");
+
+        await store.SaveVolcengineCredentialsAsync(credentials, CancellationToken.None);
+
+        var loaded = await store.GetVolcengineCredentialsAsync(CancellationToken.None);
+        await using var connection = new SqliteConnection($"Data Source={paths.DatabasePath};Mode=ReadOnly");
+        await connection.OpenAsync(CancellationToken.None);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM settings WHERE key = 'volcengine_api_key'";
+        var storedSecret = (string?)await command.ExecuteScalarAsync(CancellationToken.None);
+
+        Assert.Equal(credentials, loaded);
+        Assert.NotEqual("test-volc-api-key", storedSecret);
+        Assert.False(string.IsNullOrWhiteSpace(storedSecret));
+    }
+
+    [Fact]
     public async Task CloudCredentialsAndDeviceFingerprint_AreProtectedAndStable()
     {
         using var temp = new TempDirectory();
@@ -114,6 +136,28 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task VolcengineBringYourOwnKey_RequiresProAndUsesVolcengineProvider()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var factory = new FakeAsrProviderFactory();
+        var viewModel = new Application.Shell.ShellViewModel(
+            store, store, store, null, paths, null, factory, null, null, null, new FakeCloudAccountClient("Pro"));
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.RecognitionProvider = "自有火山引擎 Key";
+        viewModel.VolcengineApiKey = "volc-test-key";
+
+        await viewModel.TestConnectionAsync();
+
+        var credentials = await store.GetVolcengineCredentialsAsync(CancellationToken.None);
+        Assert.Equal("volc-test-key", credentials.ApiKey);
+        Assert.True(factory.VolcengineCreateWasCalled);
+        Assert.True(factory.Provider.TestConnectionWasCalled);
+    }
+
+    [Fact]
     public void FeedbackMailto_ContainsOnlyVersionAndOptionalDiagnostics()
     {
         var mailto = Application.Shell.ShellViewModel.BuildFeedbackMailto("support@example.test", "FG=Chrome Focus=Edit");
@@ -153,9 +197,11 @@ public sealed class SqliteStoreTests
         var paths = new AppPaths(temp.Path);
         var store = new SqliteStore(paths);
         var factory = new FakeAsrProviderFactory();
-        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, factory);
+        var viewModel = new Application.Shell.ShellViewModel(
+            store, store, store, null, paths, null, factory, null, null, null, new FakeCloudAccountClient("Pro"));
 
         await viewModel.InitializeAsync(CancellationToken.None);
+        viewModel.RecognitionProvider = "自有百炼 Key";
         viewModel.BailianApiKey = "sk-new-secret";
 
         await viewModel.TestConnectionAsync();
@@ -354,10 +400,19 @@ public sealed class SqliteStoreTests
     {
         public string RetranscribeText { get; set; } = string.Empty;
 
+        public bool VolcengineCreateWasCalled { get; private set; }
+
         public FakeAsrProvider Provider { get; } = new();
 
         public Domain.Services.IAsrProvider Create(BailianCredentialSettings credentials, bool semanticPunctuationEnabled)
         {
+            Provider.RetranscribeText = RetranscribeText;
+            return Provider;
+        }
+
+        public Domain.Services.IAsrProvider Create(VolcengineCredentialSettings credentials, bool semanticPunctuationEnabled)
+        {
+            VolcengineCreateWasCalled = true;
             Provider.RetranscribeText = RetranscribeText;
             return Provider;
         }

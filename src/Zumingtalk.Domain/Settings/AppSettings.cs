@@ -43,6 +43,11 @@ public sealed record BailianCredentialSettings(
     string Model = "fun-asr-realtime",
     string Endpoint = "wss://dashscope.aliyuncs.com/api-ws/v1/inference");
 
+public sealed record VolcengineCredentialSettings(
+    string ApiKey,
+    string ResourceId = "volc.seedasr.sauc.duration",
+    string Endpoint = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async");
+
 public sealed record ZumingtalkCloudCredentialSettings(
     string ServiceBaseUrl,
     string DeviceToken);

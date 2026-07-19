@@ -3,6 +3,8 @@ using Zumingtalk.Domain.Dictation;
 using Zumingtalk.Domain.Services;
 using Zumingtalk.Infrastructure.Asr;
 using Zumingtalk.Infrastructure.Windows;
+using System.IO.Compression;
+using System.Text.Json;
 
 namespace Zumingtalk.UnitTests;
 
@@ -107,6 +109,39 @@ public sealed class DictationCoordinatorTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.TestConnectionAsync(CancellationToken.None));
 
         Assert.Contains("API Key", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task VolcengineProvider_FailsClearly_WhenApiKeyIsMissing()
+    {
+        var provider = new VolcengineBigModelAsrProvider(new Domain.Settings.VolcengineCredentialSettings(string.Empty));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => provider.TestConnectionAsync(CancellationToken.None));
+
+        Assert.Contains("API Key", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void VolcengineProvider_BuildsDocumentedBigModelFrames()
+    {
+        var fullRequest = VolcengineBigModelAsrProvider.BuildFullClientRequestFrame(semanticPunctuationEnabled: true);
+        var regularAudio = VolcengineBigModelAsrProvider.BuildAudioFrame([1, 2, 3, 4], isLast: false);
+        var finalAudio = VolcengineBigModelAsrProvider.BuildAudioFrame([], isLast: true);
+
+        Assert.Equal([0x11, 0x10, 0x11, 0x00], fullRequest[..4]);
+        Assert.Equal([0x11, 0x20, 0x01, 0x00], regularAudio[..4]);
+        Assert.Equal([0x11, 0x22, 0x01, 0x00], finalAudio[..4]);
+
+        using var compressed = new MemoryStream(fullRequest[8..]);
+        using var gzip = new GZipStream(compressed, CompressionMode.Decompress);
+        using var document = JsonDocument.Parse(gzip);
+        var audio = document.RootElement.GetProperty("audio");
+        var request = document.RootElement.GetProperty("request");
+        Assert.Equal("pcm", audio.GetProperty("format").GetString());
+        Assert.Equal(16000, audio.GetProperty("rate").GetInt32());
+        Assert.Equal("bigmodel", request.GetProperty("model_name").GetString());
+        Assert.True(request.GetProperty("enable_punc").GetBoolean());
+        Assert.False(request.GetProperty("enable_ddc").GetBoolean());
     }
 
     [Fact]

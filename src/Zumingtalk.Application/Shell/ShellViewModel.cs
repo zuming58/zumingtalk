@@ -33,6 +33,7 @@ public sealed class ShellViewModel : ObservableObject
     private DictationStatistics statistics;
     private AppSettings settings;
     private string bailianApiKey = string.Empty;
+    private string volcengineApiKey = string.Empty;
     private string primaryHotkeyStatusText = "未启动";
     private string fallbackHotkeyStatusText = "未启动";
     private string lastCapturedTargetText = "尚未捕获";
@@ -135,6 +136,12 @@ public sealed class ShellViewModel : ObservableObject
     {
         get => bailianApiKey;
         set => SetProperty(ref bailianApiKey, value);
+    }
+
+    public string VolcengineApiKey
+    {
+        get => volcengineApiKey;
+        set => SetProperty(ref volcengineApiKey, value);
     }
 
     public MicrophoneDevice? SelectedMicrophone
@@ -265,11 +272,25 @@ public sealed class ShellViewModel : ObservableObject
             Settings = Settings with { Recognition = Settings.Recognition with { Provider = value } };
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsUsingCloudRecognition));
+            OnPropertyChanged(nameof(IsUsingBailianRecognition));
+            OnPropertyChanged(nameof(IsUsingVolcengineRecognition));
+            OnPropertyChanged(nameof(RecognitionModelName));
             OnPropertyChanged(nameof(CanEditBringYourOwnKey));
         }
     }
 
     public bool IsUsingCloudRecognition => RecognitionProvider == "祖名云端识别";
+
+    public bool IsUsingBailianRecognition => RecognitionProvider == "自有百炼 Key";
+
+    public bool IsUsingVolcengineRecognition => RecognitionProvider == "自有火山引擎 Key";
+
+    public string RecognitionModelName => RecognitionProvider switch
+    {
+        "祖名云端识别" => "祖名云端 Fun-ASR",
+        "自有火山引擎 Key" => "火山引擎流式语音识别大模型",
+        _ => "fun-asr-realtime"
+    };
 
     public bool HasActiveProEntitlement
     {
@@ -285,7 +306,7 @@ public sealed class ShellViewModel : ObservableObject
 
     public bool CanEditBringYourOwnKey => !IsUsingCloudRecognition && HasActiveProEntitlement;
 
-    public IReadOnlyList<string> RecognitionProviderOptions { get; } = ["祖名云端识别", "自有百炼 Key"];
+    public IReadOnlyList<string> RecognitionProviderOptions { get; } = ["祖名云端识别", "自有百炼 Key", "自有火山引擎 Key"];
 
     public string InviteCode
     {
@@ -445,6 +466,8 @@ public sealed class ShellViewModel : ObservableObject
             NotifySettingsDerivedProperties();
             var credentials = await settingsRepository.GetBailianCredentialsAsync(cancellationToken);
             LoadBailianCredentialField(credentials);
+            var volcengineCredentials = await settingsRepository.GetVolcengineCredentialsAsync(cancellationToken);
+            LoadVolcengineCredentialField(volcengineCredentials);
             var cloudCredentials = await settingsRepository.GetZumingtalkCloudCredentialsAsync(cancellationToken);
             CloudServiceUrl = cloudCredentials.ServiceBaseUrl;
         }
@@ -491,6 +514,9 @@ public sealed class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(SemanticPunctuationEnabled));
         OnPropertyChanged(nameof(RecognitionProvider));
         OnPropertyChanged(nameof(IsUsingCloudRecognition));
+        OnPropertyChanged(nameof(IsUsingBailianRecognition));
+        OnPropertyChanged(nameof(IsUsingVolcengineRecognition));
+        OnPropertyChanged(nameof(RecognitionModelName));
         OnPropertyChanged(nameof(FallbackHotkeyEnabled));
         OnPropertyChanged(nameof(PreferredInsertionMode));
     }
@@ -953,6 +979,7 @@ public sealed class ShellViewModel : ObservableObject
         {
             await settingsRepository!.SaveAsync(Settings, CancellationToken.None);
             await SaveBailianCredentialFieldAsync(CancellationToken.None);
+            await SaveVolcengineCredentialFieldAsync(CancellationToken.None);
             ShowToast("设置已保存", ToastKind.Success);
         }
         catch (Exception ex)
@@ -971,20 +998,41 @@ public sealed class ShellViewModel : ObservableObject
 
         try
         {
+            await settingsRepository.SaveAsync(Settings, CancellationToken.None);
             await SaveBailianCredentialFieldAsync(CancellationToken.None);
-            var credentials = await settingsRepository.GetBailianCredentialsAsync(CancellationToken.None);
-            var provider = asrProviderFactory.Create(credentials, Settings.Recognition.SemanticPunctuationEnabled);
+            await SaveVolcengineCredentialFieldAsync(CancellationToken.None);
+            await EnsureBringYourOwnKeyAllowedAsync(CancellationToken.None);
+            IAsrProvider provider;
+            string providerName;
+            if (IsUsingVolcengineRecognition)
+            {
+                var credentials = await settingsRepository.GetVolcengineCredentialsAsync(CancellationToken.None);
+                provider = asrProviderFactory.Create(credentials, Settings.Recognition.SemanticPunctuationEnabled);
+                providerName = "火山引擎 ASR";
+            }
+            else if (IsUsingBailianRecognition)
+            {
+                var credentials = await settingsRepository.GetBailianCredentialsAsync(CancellationToken.None);
+                provider = asrProviderFactory.Create(credentials, Settings.Recognition.SemanticPunctuationEnabled);
+                providerName = "百炼 Fun-ASR";
+            }
+            else
+            {
+                ShowToast("祖名云端识别会在开始听写时校验服务连接。", ToastKind.Info);
+                return;
+            }
+
             await provider.TestConnectionAsync(CancellationToken.None);
             if (microphoneTestService is not null)
             {
                 await microphoneTestService.TestAsync(Settings.Recognition.MicrophoneDeviceNumber, CancellationToken.None);
             }
 
-            ShowToast("百炼 Fun-ASR 连接与麦克风测试通过", ToastKind.Success);
+            ShowToast($"{providerName} 连接与麦克风测试通过", ToastKind.Success);
         }
         catch (Exception ex)
         {
-            ShowToast($"百炼连接测试失败：{ex.Message}", ToastKind.Error);
+            ShowToast($"识别连接测试失败：{ex.Message}", ToastKind.Error);
         }
     }
 
@@ -1052,6 +1100,25 @@ public sealed class ShellViewModel : ObservableObject
         LoadBailianCredentialField(credentials, clearSecret: true);
     }
 
+    private async Task SaveVolcengineCredentialFieldAsync(CancellationToken cancellationToken)
+    {
+        if (settingsRepository is null)
+        {
+            return;
+        }
+
+        var existing = await settingsRepository.GetVolcengineCredentialsAsync(cancellationToken);
+        var credentials = existing with
+        {
+            ApiKey = string.IsNullOrWhiteSpace(VolcengineApiKey)
+                ? existing.ApiKey
+                : VolcengineApiKey.Trim()
+        };
+
+        await settingsRepository.SaveVolcengineCredentialsAsync(credentials, cancellationToken);
+        LoadVolcengineCredentialField(credentials, clearSecret: true);
+    }
+
     private void LoadBailianCredentialField(BailianCredentialSettings credentials, bool clearSecret = true)
     {
         if (clearSecret)
@@ -1061,6 +1128,18 @@ public sealed class ShellViewModel : ObservableObject
         else
         {
             BailianApiKey = credentials.ApiKey;
+        }
+    }
+
+    private void LoadVolcengineCredentialField(VolcengineCredentialSettings credentials, bool clearSecret = true)
+    {
+        if (clearSecret)
+        {
+            VolcengineApiKey = string.Empty;
+        }
+        else
+        {
+            VolcengineApiKey = credentials.ApiKey;
         }
     }
 
