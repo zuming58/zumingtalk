@@ -19,3 +19,19 @@ public interface IAsrSession : IAsyncDisposable
 
     Task CancelAsync(CancellationToken cancellationToken);
 }
+
+public interface ICloudAccountClient
+{
+    Task ActivateAsync(string serviceBaseUrl, string inviteCode, CancellationToken cancellationToken);
+
+    Task<CloudEntitlementSnapshot> GetEntitlementAsync(CancellationToken cancellationToken);
+}
+
+public interface IDeviceFingerprintProvider
+{
+    Task<string> GetOrCreateAsync(CancellationToken cancellationToken);
+}
+
+public sealed record CloudEntitlementSnapshot(string Plan, DateTimeOffset ServerTime, IReadOnlyList<CloudQuotaBucket> QuotaBuckets);
+
+public sealed record CloudQuotaBucket(string Kind, int RemainingSeconds, DateTimeOffset? ExpiresAt);

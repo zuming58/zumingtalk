@@ -20,6 +20,7 @@ public sealed class ShellViewModel : ObservableObject
     private readonly IMicrophoneDeviceService? microphoneDeviceService;
     private readonly IMicrophoneTestService? microphoneTestService;
     private readonly ITextInsertionService? textInsertionService;
+    private readonly ICloudAccountClient? cloudAccountClient;
     private string selectedPage = "Home";
     private TranscriptionRecordViewModel? selectedRecord;
     private TranscriptionRecordViewModel? menuRecord;
@@ -39,6 +40,10 @@ public sealed class ShellViewModel : ObservableObject
     private string lastInsertionStatusText = "尚未写入";
     private bool isBackToTopVisible;
     private MicrophoneDevice? selectedMicrophone;
+    private string cloudServiceUrl = string.Empty;
+    private string inviteCode = string.Empty;
+    private string subscriptionPlan = "未激活";
+    private string subscriptionQuotaText = "完成设备激活后显示祖名云端额度";
 
     public ShellViewModel()
         : this(null, null, null, null, null)
@@ -55,7 +60,8 @@ public sealed class ShellViewModel : ObservableObject
         IAsrProviderFactory? asrProviderFactory = null,
         IMicrophoneDeviceService? microphoneDeviceService = null,
         IMicrophoneTestService? microphoneTestService = null,
-        ITextInsertionService? textInsertionService = null)
+        ITextInsertionService? textInsertionService = null,
+        ICloudAccountClient? cloudAccountClient = null)
     {
         this.historyRepository = historyRepository;
         this.statisticsRepository = statisticsRepository;
@@ -67,6 +73,7 @@ public sealed class ShellViewModel : ObservableObject
         this.microphoneDeviceService = microphoneDeviceService;
         this.microphoneTestService = microphoneTestService;
         this.textInsertionService = textInsertionService;
+        this.cloudAccountClient = cloudAccountClient;
 
         Records = MockDataFactory.CreateRecords();
         Microphones = new ObservableCollection<MicrophoneDevice>();
@@ -75,6 +82,9 @@ public sealed class ShellViewModel : ObservableObject
 
         ShowHomeCommand = new RelayCommand(_ => SelectedPage = "Home");
         ShowSettingsCommand = new RelayCommand(_ => SelectedPage = "Settings");
+        ShowSubscriptionCommand = new RelayCommand(_ => SelectedPage = "Subscription");
+        ActivateCloudCommand = new RelayCommand(_ => _ = ActivateCloudAsync());
+        RefreshEntitlementCommand = new RelayCommand(_ => _ = RefreshEntitlementAsync());
         CopyCommand = new RelayCommand(CopyRecord, parameter => parameter is TranscriptionRecordViewModel);
         DeleteCommand = new RelayCommand(DeleteRecord, parameter => parameter is TranscriptionRecordViewModel);
         UndoDeleteCommand = new RelayCommand(_ => UndoDelete(), _ => lastDeletedRecord is not null);
@@ -201,6 +211,7 @@ public sealed class ShellViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(IsHomeSelected));
                 OnPropertyChanged(nameof(IsSettingsSelected));
+                OnPropertyChanged(nameof(IsSubscriptionSelected));
             }
         }
     }
@@ -208,6 +219,52 @@ public sealed class ShellViewModel : ObservableObject
     public bool IsHomeSelected => SelectedPage == "Home";
 
     public bool IsSettingsSelected => SelectedPage == "Settings";
+
+    public bool IsSubscriptionSelected => SelectedPage == "Subscription";
+
+    public string CloudServiceUrl
+    {
+        get => cloudServiceUrl;
+        set => SetProperty(ref cloudServiceUrl, value);
+    }
+
+    public string RecognitionProvider
+    {
+        get => Settings.Recognition.Provider;
+        set
+        {
+            if (string.Equals(value, Settings.Recognition.Provider, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Settings = Settings with { Recognition = Settings.Recognition with { Provider = value } };
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsUsingCloudRecognition));
+        }
+    }
+
+    public bool IsUsingCloudRecognition => RecognitionProvider == "祖名云端识别";
+
+    public IReadOnlyList<string> RecognitionProviderOptions { get; } = ["祖名云端识别", "自有百炼 Key"];
+
+    public string InviteCode
+    {
+        get => inviteCode;
+        set => SetProperty(ref inviteCode, value);
+    }
+
+    public string SubscriptionPlan
+    {
+        get => subscriptionPlan;
+        private set => SetProperty(ref subscriptionPlan, value);
+    }
+
+    public string SubscriptionQuotaText
+    {
+        get => subscriptionQuotaText;
+        private set => SetProperty(ref subscriptionQuotaText, value);
+    }
 
     public TranscriptionRecordViewModel? SelectedRecord
     {
@@ -301,6 +358,12 @@ public sealed class ShellViewModel : ObservableObject
 
     public RelayCommand ShowSettingsCommand { get; }
 
+    public RelayCommand ShowSubscriptionCommand { get; }
+
+    public RelayCommand ActivateCloudCommand { get; }
+
+    public RelayCommand RefreshEntitlementCommand { get; }
+
     public RelayCommand CopyCommand { get; }
 
     public RelayCommand DeleteCommand { get; }
@@ -339,6 +402,13 @@ public sealed class ShellViewModel : ObservableObject
             NotifySettingsDerivedProperties();
             var credentials = await settingsRepository.GetBailianCredentialsAsync(cancellationToken);
             LoadBailianCredentialField(credentials);
+            var cloudCredentials = await settingsRepository.GetZumingtalkCloudCredentialsAsync(cancellationToken);
+            CloudServiceUrl = cloudCredentials.ServiceBaseUrl;
+        }
+
+        if (cloudAccountClient is not null && !string.IsNullOrWhiteSpace(CloudServiceUrl))
+        {
+            await RefreshEntitlementAsync();
         }
 
         LoadMicrophones();
@@ -376,9 +446,67 @@ public sealed class ShellViewModel : ObservableObject
     private void NotifySettingsDerivedProperties()
     {
         OnPropertyChanged(nameof(SemanticPunctuationEnabled));
+        OnPropertyChanged(nameof(RecognitionProvider));
+        OnPropertyChanged(nameof(IsUsingCloudRecognition));
         OnPropertyChanged(nameof(FallbackHotkeyEnabled));
         OnPropertyChanged(nameof(PreferredInsertionMode));
     }
+
+    private async Task ActivateCloudAsync()
+    {
+        if (cloudAccountClient is null)
+        {
+            ShowToast("祖名云端服务尚未初始化", ToastKind.Error);
+            return;
+        }
+
+        try
+        {
+            await cloudAccountClient.ActivateAsync(CloudServiceUrl, InviteCode, CancellationToken.None);
+            InviteCode = string.Empty;
+            ShowToast("设备已激活", ToastKind.Success);
+            await RefreshEntitlementAsync();
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"设备激活失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
+    private async Task RefreshEntitlementAsync()
+    {
+        if (cloudAccountClient is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var entitlement = await cloudAccountClient.GetEntitlementAsync(CancellationToken.None);
+            SubscriptionPlan = entitlement.Plan == "Pro" ? "祖名云端识别 · Pro" : "祖名云端识别 · 试用";
+            var buckets = entitlement.QuotaBuckets
+                .Select(bucket => $"{BucketLabel(bucket.Kind)} {FormatSeconds(bucket.RemainingSeconds)}")
+                .ToList();
+            SubscriptionQuotaText = buckets.Count == 0 ? "当前没有可用祖名云端额度" : string.Join("   ", buckets);
+        }
+        catch (Exception ex)
+        {
+            SubscriptionPlan = "未激活或无法连接";
+            SubscriptionQuotaText = ex.Message;
+        }
+    }
+
+    private static string BucketLabel(string kind) => kind switch
+    {
+        "Trial" => "试用剩余",
+        "ProMonthly" => "本期剩余",
+        "AddOn" => "加量包剩余",
+        _ => "剩余"
+    };
+
+    private static string FormatSeconds(int seconds) => seconds >= 3600
+        ? $"{seconds / 3600d:0.0} 小时"
+        : $"{seconds} 秒";
 
     public async Task ReloadRecordsAsync(CancellationToken cancellationToken)
     {

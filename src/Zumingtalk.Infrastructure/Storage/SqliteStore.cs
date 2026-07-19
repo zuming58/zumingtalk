@@ -6,7 +6,7 @@ using Zumingtalk.Domain.Settings;
 
 namespace Zumingtalk.Infrastructure.Storage;
 
-public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISettingsRepository
+public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISettingsRepository, IDeviceFingerprintProvider
 {
     private readonly IAppPaths appPaths;
 
@@ -204,6 +204,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("microphone_name", settings.Recognition.MicrophoneName, cancellationToken);
         await SetSettingAsync("fallback_hotkey_enabled", settings.Hotkeys.FallbackHotkeyEnabled ? "true" : "false", cancellationToken);
         await SetSettingAsync("preferred_insertion_mode", settings.Compatibility.PreferredMode.ToString(), cancellationToken);
+        await SetSettingAsync("recognition_provider", settings.Recognition.Provider, cancellationToken);
     }
 
     public async Task<AliyunCredentialSettings> GetAliyunCredentialsAsync(CancellationToken cancellationToken)
@@ -242,6 +243,36 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("bailian_endpoint", credentials.Endpoint, cancellationToken);
     }
 
+    public async Task<ZumingtalkCloudCredentialSettings> GetZumingtalkCloudCredentialsAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        var serviceBaseUrl = await GetSettingAsync("zumingtalk_cloud_service_url", cancellationToken) ?? string.Empty;
+        var encryptedToken = await GetSettingAsync("zumingtalk_cloud_device_token", cancellationToken);
+        var token = string.IsNullOrWhiteSpace(encryptedToken) ? string.Empty : ProtectedSecret.Unprotect(encryptedToken);
+        return new ZumingtalkCloudCredentialSettings(serviceBaseUrl, token);
+    }
+
+    public async Task SaveZumingtalkCloudCredentialsAsync(ZumingtalkCloudCredentialSettings credentials, CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        await SetSettingAsync("zumingtalk_cloud_service_url", credentials.ServiceBaseUrl.TrimEnd('/'), cancellationToken);
+        await SetSettingAsync("zumingtalk_cloud_device_token", ProtectedSecret.Protect(credentials.DeviceToken), cancellationToken);
+    }
+
+    public async Task<string> GetOrCreateAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken);
+        var encryptedFingerprint = await GetSettingAsync("zumingtalk_device_fingerprint", cancellationToken);
+        if (!string.IsNullOrWhiteSpace(encryptedFingerprint))
+        {
+            return ProtectedSecret.Unprotect(encryptedFingerprint);
+        }
+
+        var fingerprint = Guid.NewGuid().ToString("N");
+        await SetSettingAsync("zumingtalk_device_fingerprint", ProtectedSecret.Protect(fingerprint), cancellationToken);
+        return fingerprint;
+    }
+
     private async Task<AppSettings> BuildSettingsAsync(Task<BailianCredentialSettings> credentialsTask, CancellationToken cancellationToken)
     {
         var credentials = await credentialsTask;
@@ -251,6 +282,8 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
             ?? await GetSettingAsync("oral_smoothing", cancellationToken)
             ?? "true";
         var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
+        var provider = await GetSettingAsync("recognition_provider", cancellationToken)
+            ?? (string.IsNullOrWhiteSpace(credentials.ApiKey) ? "祖名云端识别" : "自有百炼 Key");
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
         _ = bool.TryParse(semanticPunctuationText, out var semanticPunctuationEnabled);
         if (!Enum.TryParse<TextInsertionMethod>(insertionModeText, out var preferredMode))
@@ -261,7 +294,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         cancellationToken.ThrowIfCancellationRequested();
         return new AppSettings(
             new RecognitionSettings(
-                "阿里云百炼 Fun-ASR",
+                provider,
                 Mask(credentials.ApiKey),
                 SemanticPunctuationEnabled: semanticPunctuationEnabled,
                 MicrophoneName: microphoneName,

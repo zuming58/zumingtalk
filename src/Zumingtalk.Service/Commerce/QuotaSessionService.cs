@@ -29,13 +29,15 @@ public sealed class QuotaSessionService(ServiceDbContext dbContext, TimeProvider
             .Select(value => new { Bucket = value, Available = Math.Max(0, value.RemainingSeconds - value.ReservedSeconds) })
             .Where(value => value.Available > 0)
             .ToList();
-        if (allocations.Sum(value => value.Available) < MaximumReservationSeconds)
+        var totalAvailable = allocations.Sum(value => value.Available);
+        if (totalAvailable == 0)
         {
             throw new QuotaUnavailableException();
         }
 
         var session = new AsrSession { ActivationId = activationId, Source = "ZumingtalkCloud", CreatedAt = now };
-        var stillNeeded = MaximumReservationSeconds;
+        var reservationLimit = Math.Min(MaximumReservationSeconds, totalAvailable);
+        var stillNeeded = reservationLimit;
         foreach (var allocation in allocations)
         {
             if (stillNeeded == 0)
@@ -52,7 +54,7 @@ public sealed class QuotaSessionService(ServiceDbContext dbContext, TimeProvider
         dbContext.AsrSessions.Add(session);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new CreateAsrSessionResponse(session.Id, MaximumReservationSeconds, now, $"{streamUrl}?sessionId={session.Id:D}");
+        return new CreateAsrSessionResponse(session.Id, reservationLimit, now, $"{streamUrl}?sessionId={session.Id:D}");
     }
 
     public async Task RecordPcmAsync(Guid sessionId, Guid activationId, int byteCount, CancellationToken cancellationToken)
@@ -69,7 +71,8 @@ public sealed class QuotaSessionService(ServiceDbContext dbContext, TimeProvider
             throw new InvalidOperationException("ASR session is already closed.");
         }
 
-        if (session.ReceivedPcmBytes + byteCount > (long)MaximumReservationSeconds * PcmBytesPerSecond)
+        var reservedSeconds = await dbContext.AsrSessionReservations.Where(value => value.SessionId == sessionId).SumAsync(value => value.ReservedSeconds, cancellationToken);
+        if (session.ReceivedPcmBytes + byteCount > (long)reservedSeconds * PcmBytesPerSecond)
         {
             throw new InvalidOperationException("ASR session exceeded its maximum duration.");
         }

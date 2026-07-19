@@ -15,4 +15,8 @@ public interface ISettingsRepository
     Task<BailianCredentialSettings> GetBailianCredentialsAsync(CancellationToken cancellationToken);
 
     Task SaveBailianCredentialsAsync(BailianCredentialSettings credentials, CancellationToken cancellationToken);
+
+    Task<ZumingtalkCloudCredentialSettings> GetZumingtalkCloudCredentialsAsync(CancellationToken cancellationToken);
+
+    Task SaveZumingtalkCloudCredentialsAsync(ZumingtalkCloudCredentialSettings credentials, CancellationToken cancellationToken);
 }

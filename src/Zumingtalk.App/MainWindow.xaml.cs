@@ -51,7 +51,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         sqliteStore = new SqliteStore(appPaths);
-        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new BailianAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService);
+        viewModel = new ShellViewModel(sqliteStore, sqliteStore, sqliteStore, audioPlaybackService, appPaths, new WpfClipboardService(), new BailianAsrProviderFactory(), new NAudioMicrophoneDeviceService(), new NAudioMicrophoneTestService(), textInsertionService, new ZumingtalkCloudAccountClient(sqliteStore, sqliteStore));
         audioRecorder = new NAudioRecorder(appPaths, () => viewModel.SelectedMicrophone?.DeviceNumber ?? viewModel.Settings.Recognition.MicrophoneDeviceNumber);
 
         InitializeComponent();
@@ -595,8 +595,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<BailianFunAsrProvider> CreateAsrProviderAsync()
+    private async Task<IAsrProvider> CreateAsrProviderAsync()
     {
+        if (viewModel.IsUsingCloudRecognition)
+        {
+            var cloudCredentials = await sqliteStore.GetZumingtalkCloudCredentialsAsync(CancellationToken.None);
+            return new ZumingtalkCloudAsrProvider(cloudCredentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
+        }
+
         var credentials = await sqliteStore.GetBailianCredentialsAsync(CancellationToken.None);
         return new BailianFunAsrProvider(credentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
     }

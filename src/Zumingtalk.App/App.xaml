@@ -34,6 +34,7 @@
         <controls:BooleanToSelectedBrushConverter x:Key="BooleanToSelectedBrushConverter" />
         <controls:BooleanToNavBackgroundConverter x:Key="BooleanToNavBackgroundConverter" />
         <controls:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <controls:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
         <controls:BooleanToInverseVisibilityConverter x:Key="BooleanToInverseVisibilityConverter" />
         <controls:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
         <controls:DictationStateToVisibilityConverter x:Key="DictationStateToVisibilityConverter" />

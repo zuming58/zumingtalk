@@ -64,6 +64,31 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task CloudCredentialsAndDeviceFingerprint_AreProtectedAndStable()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var credentials = new BailianCredentialSettings("sk-existing-user-key");
+
+        await store.SaveBailianCredentialsAsync(credentials, CancellationToken.None);
+        await store.SaveZumingtalkCloudCredentialsAsync(new ZumingtalkCloudCredentialSettings("https://service.example.test", "device-token-secret"), CancellationToken.None);
+        var firstFingerprint = await store.GetOrCreateAsync(CancellationToken.None);
+        var secondFingerprint = await store.GetOrCreateAsync(CancellationToken.None);
+        var settings = await ((Domain.Services.ISettingsRepository)store).GetAsync(CancellationToken.None);
+
+        await using var connection = new SqliteConnection($"Data Source={paths.DatabasePath};Mode=ReadOnly");
+        await connection.OpenAsync(CancellationToken.None);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM settings WHERE key = 'zumingtalk_cloud_device_token'";
+        var storedToken = (string?)await command.ExecuteScalarAsync(CancellationToken.None);
+
+        Assert.Equal(firstFingerprint, secondFingerprint);
+        Assert.NotEqual("device-token-secret", storedToken);
+        Assert.Equal("自有百炼 Key", settings.Recognition.Provider);
+    }
+
+    [Fact]
     public async Task ShellViewModel_SaveSettings_KeepsExistingApiKey_WhenPasswordFieldIsBlank()
     {
         using var temp = new TempDirectory();

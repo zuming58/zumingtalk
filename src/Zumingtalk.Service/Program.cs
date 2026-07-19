@@ -78,7 +78,8 @@ app.MapPost("/api/asr/sessions", async (HttpContext context, ClaimsPrincipal pri
     }
 
     var activationId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    var streamUrl = $"{context.Request.Scheme}://{context.Request.Host}/api/asr/stream";
+    var webSocketScheme = context.Request.IsHttps ? "wss" : "ws";
+    var streamUrl = $"{webSocketScheme}://{context.Request.Host}/api/asr/stream";
     try
     {
         return Results.Ok(await service.ReserveAsync(activationId, streamUrl, cancellationToken));

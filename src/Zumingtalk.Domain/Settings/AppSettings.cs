@@ -41,3 +41,7 @@ public sealed record BailianCredentialSettings(
     string ApiKey,
     string Model = "fun-asr-realtime",
     string Endpoint = "wss://dashscope.aliyuncs.com/api-ws/v1/inference");
+
+public sealed record ZumingtalkCloudCredentialSettings(
+    string ServiceBaseUrl,
+    string DeviceToken);
