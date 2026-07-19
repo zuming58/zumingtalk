@@ -28,7 +28,8 @@ public sealed record AppSettings(
     RecognitionSettings Recognition,
     HotkeySettings Hotkeys,
     CompatibilitySettings Compatibility,
-    LocalDataSettings LocalData);
+    LocalDataSettings LocalData,
+    string SupportEmail = "");
 
 public sealed record AliyunCredentialSettings(
     string AppKey,

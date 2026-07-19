@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text;
 using Zumingtalk.Application.Common;
 using Zumingtalk.Application.DesignTime;
 using Zumingtalk.Domain.Dictation;
@@ -44,6 +45,8 @@ public sealed class ShellViewModel : ObservableObject
     private string inviteCode = string.Empty;
     private string subscriptionPlan = "未激活";
     private string subscriptionQuotaText = "完成设备激活后显示祖名云端额度";
+    private bool hasActiveProEntitlement;
+    private bool includeFeedbackDiagnostics;
 
     public ShellViewModel()
         : this(null, null, null, null, null)
@@ -83,6 +86,8 @@ public sealed class ShellViewModel : ObservableObject
         ShowHomeCommand = new RelayCommand(_ => SelectedPage = "Home");
         ShowSettingsCommand = new RelayCommand(_ => SelectedPage = "Settings");
         ShowSubscriptionCommand = new RelayCommand(_ => SelectedPage = "Subscription");
+        ShowHelpCommand = new RelayCommand(_ => SelectedPage = "Help");
+        ComposeFeedbackCommand = new RelayCommand(_ => ComposeFeedback());
         ActivateCloudCommand = new RelayCommand(_ => _ = ActivateCloudAsync());
         RefreshEntitlementCommand = new RelayCommand(_ => _ = RefreshEntitlementAsync());
         CopyCommand = new RelayCommand(CopyRecord, parameter => parameter is TranscriptionRecordViewModel);
@@ -212,6 +217,7 @@ public sealed class ShellViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsHomeSelected));
                 OnPropertyChanged(nameof(IsSettingsSelected));
                 OnPropertyChanged(nameof(IsSubscriptionSelected));
+                OnPropertyChanged(nameof(IsHelpSelected));
             }
         }
     }
@@ -221,6 +227,24 @@ public sealed class ShellViewModel : ObservableObject
     public bool IsSettingsSelected => SelectedPage == "Settings";
 
     public bool IsSubscriptionSelected => SelectedPage == "Subscription";
+
+    public bool IsHelpSelected => SelectedPage == "Help";
+
+    public string SupportEmail
+    {
+        get => Settings.SupportEmail;
+        set
+        {
+            Settings = Settings with { SupportEmail = value.Trim() };
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IncludeFeedbackDiagnostics
+    {
+        get => includeFeedbackDiagnostics;
+        set => SetProperty(ref includeFeedbackDiagnostics, value);
+    }
 
     public string CloudServiceUrl
     {
@@ -241,10 +265,25 @@ public sealed class ShellViewModel : ObservableObject
             Settings = Settings with { Recognition = Settings.Recognition with { Provider = value } };
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsUsingCloudRecognition));
+            OnPropertyChanged(nameof(CanEditBringYourOwnKey));
         }
     }
 
     public bool IsUsingCloudRecognition => RecognitionProvider == "祖名云端识别";
+
+    public bool HasActiveProEntitlement
+    {
+        get => hasActiveProEntitlement;
+        private set
+        {
+            if (SetProperty(ref hasActiveProEntitlement, value))
+            {
+                OnPropertyChanged(nameof(CanEditBringYourOwnKey));
+            }
+        }
+    }
+
+    public bool CanEditBringYourOwnKey => !IsUsingCloudRecognition && HasActiveProEntitlement;
 
     public IReadOnlyList<string> RecognitionProviderOptions { get; } = ["祖名云端识别", "自有百炼 Key"];
 
@@ -359,6 +398,10 @@ public sealed class ShellViewModel : ObservableObject
     public RelayCommand ShowSettingsCommand { get; }
 
     public RelayCommand ShowSubscriptionCommand { get; }
+
+    public RelayCommand ShowHelpCommand { get; }
+
+    public RelayCommand ComposeFeedbackCommand { get; }
 
     public RelayCommand ActivateCloudCommand { get; }
 
@@ -484,6 +527,7 @@ public sealed class ShellViewModel : ObservableObject
         {
             var entitlement = await cloudAccountClient.GetEntitlementAsync(CancellationToken.None);
             SubscriptionPlan = entitlement.Plan == "Pro" ? "祖名云端识别 · Pro" : "祖名云端识别 · 试用";
+            HasActiveProEntitlement = entitlement.Plan == "Pro";
             var buckets = entitlement.QuotaBuckets
                 .Select(bucket => $"{BucketLabel(bucket.Kind)} {FormatSeconds(bucket.RemainingSeconds)}")
                 .ToList();
@@ -493,6 +537,27 @@ public sealed class ShellViewModel : ObservableObject
         {
             SubscriptionPlan = "未激活或无法连接";
             SubscriptionQuotaText = ex.Message;
+            HasActiveProEntitlement = false;
+        }
+    }
+
+    public async Task EnsureBringYourOwnKeyAllowedAsync(CancellationToken cancellationToken)
+    {
+        if (IsUsingCloudRecognition)
+        {
+            return;
+        }
+
+        if (cloudAccountClient is null)
+        {
+            throw new InvalidOperationException("自有模型需要有效的祖名云端 Pro 权益。");
+        }
+
+        var entitlement = await cloudAccountClient.GetEntitlementAsync(cancellationToken);
+        HasActiveProEntitlement = entitlement.Plan == "Pro";
+        if (!HasActiveProEntitlement)
+        {
+            throw new InvalidOperationException("自有模型仅对有效 Pro 开放，请在订阅与额度中续订。");
         }
     }
 
@@ -507,6 +572,29 @@ public sealed class ShellViewModel : ObservableObject
     private static string FormatSeconds(int seconds) => seconds >= 3600
         ? $"{seconds / 3600d:0.0} 小时"
         : $"{seconds} 秒";
+
+    private void ComposeFeedback()
+    {
+        if (string.IsNullOrWhiteSpace(SupportEmail))
+        {
+            ShowToast("请先填写支持邮箱", ToastKind.Error);
+            return;
+        }
+
+        var mailto = BuildFeedbackMailto(SupportEmail, IncludeFeedbackDiagnostics ? LastTargetDiagnosticsText : null);
+        Process.Start(new ProcessStartInfo(mailto) { UseShellExecute = true });
+    }
+
+    public static string BuildFeedbackMailto(string supportEmail, string? diagnostics)
+    {
+        var body = new StringBuilder($"版本：{typeof(ShellViewModel).Assembly.GetName().Version}\r\n");
+        if (!string.IsNullOrWhiteSpace(diagnostics))
+        {
+            body.Append("诊断：").Append(diagnostics).Append("\r\n");
+        }
+
+        return $"mailto:{Uri.EscapeDataString(supportEmail)}?subject={Uri.EscapeDataString("祖名闪电说反馈")}&body={Uri.EscapeDataString(body.ToString())}";
+    }
 
     public async Task ReloadRecordsAsync(CancellationToken cancellationToken)
     {

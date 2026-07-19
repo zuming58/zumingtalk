@@ -205,6 +205,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         await SetSettingAsync("fallback_hotkey_enabled", settings.Hotkeys.FallbackHotkeyEnabled ? "true" : "false", cancellationToken);
         await SetSettingAsync("preferred_insertion_mode", settings.Compatibility.PreferredMode.ToString(), cancellationToken);
         await SetSettingAsync("recognition_provider", settings.Recognition.Provider, cancellationToken);
+        await SetSettingAsync("support_email", settings.SupportEmail, cancellationToken);
     }
 
     public async Task<AliyunCredentialSettings> GetAliyunCredentialsAsync(CancellationToken cancellationToken)
@@ -284,6 +285,7 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
         var insertionModeText = await GetSettingAsync("preferred_insertion_mode", cancellationToken) ?? TextInsertionMethod.Auto.ToString();
         var provider = await GetSettingAsync("recognition_provider", cancellationToken)
             ?? (string.IsNullOrWhiteSpace(credentials.ApiKey) ? "祖名云端识别" : "自有百炼 Key");
+        var supportEmail = await GetSettingAsync("support_email", cancellationToken) ?? string.Empty;
         _ = int.TryParse(microphoneDeviceNumberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var microphoneDeviceNumber);
         _ = bool.TryParse(semanticPunctuationText, out var semanticPunctuationEnabled);
         if (!Enum.TryParse<TextInsertionMethod>(insertionModeText, out var preferredMode))
@@ -301,7 +303,8 @@ public sealed class SqliteStore : IHistoryRepository, IStatisticsRepository, ISe
                 MicrophoneDeviceNumber: microphoneDeviceNumber),
             new HotkeySettings("右 Alt", false, string.Empty),
             new CompatibilitySettings("尚未捕获", TextInsertionMethod.Auto, false, preferredMode),
-            new LocalDataSettings(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zumingtalk", "recordings"), 3));
+            new LocalDataSettings(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Zumingtalk", "recordings"), 3),
+            supportEmail);
     }
 
     private static string Mask(string value)

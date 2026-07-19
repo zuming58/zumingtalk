@@ -89,6 +89,46 @@ public sealed class SqliteStoreTests
     }
 
     [Fact]
+    public async Task BringYourOwnKey_RequiresAnActiveProEntitlement()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        var trialCloud = new FakeCloudAccountClient("Trial");
+        var viewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, null, null, null, null, trialCloud)
+        {
+            RecognitionProvider = "自有百炼 Key"
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => viewModel.EnsureBringYourOwnKeyAllowedAsync(CancellationToken.None));
+
+        var proCloud = new FakeCloudAccountClient("Pro");
+        var proViewModel = new Application.Shell.ShellViewModel(store, store, store, null, paths, null, null, null, null, null, proCloud)
+        {
+            RecognitionProvider = "自有百炼 Key"
+        };
+        await proViewModel.EnsureBringYourOwnKeyAllowedAsync(CancellationToken.None);
+
+        Assert.True(proViewModel.HasActiveProEntitlement);
+        Assert.True(proViewModel.CanEditBringYourOwnKey);
+    }
+
+    [Fact]
+    public void FeedbackMailto_ContainsOnlyVersionAndOptionalDiagnostics()
+    {
+        var mailto = Application.Shell.ShellViewModel.BuildFeedbackMailto("support@example.test", "FG=Chrome Focus=Edit");
+        var decoded = Uri.UnescapeDataString(mailto);
+
+        Assert.Contains("support@example.test", decoded);
+        Assert.Contains("版本：", decoded);
+        Assert.Contains("FG=Chrome", decoded);
+        Assert.DoesNotContain("final transcription", decoded, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("C:\\recordings", decoded, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sk-super-secret", decoded, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("device-token-secret", decoded, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ShellViewModel_SaveSettings_KeepsExistingApiKey_WhenPasswordFieldIsBlank()
     {
         using var temp = new TempDirectory();
@@ -356,5 +396,13 @@ public sealed class SqliteStoreTests
     private sealed class FakeMicrophoneTestService : Domain.Services.IMicrophoneTestService
     {
         public Task TestAsync(int deviceNumber, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class FakeCloudAccountClient(string plan) : Domain.Services.ICloudAccountClient
+    {
+        public Task ActivateAsync(string serviceBaseUrl, string inviteCode, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<Domain.Services.CloudEntitlementSnapshot> GetEntitlementAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new Domain.Services.CloudEntitlementSnapshot(plan, DateTimeOffset.UtcNow, []));
     }
 }

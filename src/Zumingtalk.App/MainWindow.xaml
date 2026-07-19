@@ -251,6 +251,16 @@
                             <TextBlock Margin="14,0,0,0" VerticalAlignment="Center" FontSize="17" FontWeight="Bold" Text="订阅与额度" />
                         </StackPanel>
                     </Button>
+                    <Button Margin="0,10,0,0"
+                            Style="{StaticResource NavButtonStyle}"
+                            Background="{Binding IsHelpSelected, Converter={StaticResource BooleanToNavBackgroundConverter}}"
+                            Foreground="{Binding IsHelpSelected, Converter={StaticResource BooleanToSelectedBrushConverter}}"
+                            Command="{Binding ShowHelpCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource IconTextStyle}" Text="&#xE897;" />
+                            <TextBlock Margin="14,0,0,0" VerticalAlignment="Center" FontSize="17" FontWeight="Bold" Text="帮助与反馈" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -519,6 +529,37 @@
                                 <TextBlock Margin="0,16,0,0" FontSize="13" FontWeight="Bold" Foreground="#374863" Text="邀请码" />
                                 <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding InviteCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 <Button Margin="0,20,0,0" MinWidth="116" HorizontalAlignment="Left" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ActivateCloudCommand}" Content="激活设备" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Grid Visibility="{Binding IsHelpSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ScrollViewer Padding="54,40,126,70" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Text="支持" />
+                        <TextBlock Margin="0,5,0,24" FontSize="26" FontWeight="Bold" Text="帮助与反馈" />
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <TextBlock FontSize="17" FontWeight="Bold" Text="写入与兼容性" />
+                                <TextBlock Margin="0,10,0,0" FontSize="14" LineHeight="24" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" Text="应用会优先写入原输入框；管理员窗口、安全软件或第三方编辑器拒绝模拟粘贴时，结果会保留在历史并复制到剪贴板。不会自动发送 Enter。360、UAC 和系统设置不会被应用修改。" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <TextBlock FontSize="17" FontWeight="Bold" Text="额度、自有 Key 与隐私" />
+                                <TextBlock Margin="0,10,0,0" FontSize="14" LineHeight="24" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" Text="祖名云端按服务端接收的音频秒数结算。自有百炼或火山 Key 仅在有效 Pro 下可用，凭证仅由当前 Windows 用户加密保存。服务端账本不保存音频、转写正文或用户自有 Key。" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
+                                <TextBlock FontSize="17" FontWeight="Bold" Text="发送反馈" />
+                                <TextBlock Margin="0,7,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="邮件草稿默认只包含版本号；勾选后才附加不含文本内容的兼容性诊断摘要。" />
+                                <TextBlock Margin="0,18,0,0" FontSize="13" FontWeight="Bold" Foreground="#374863" Text="支持邮箱" />
+                                <TextBox Margin="0,8,0,0" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding SupportEmail, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <CheckBox Margin="0,16,0,0" IsChecked="{Binding IncludeFeedbackDiagnostics, Mode=TwoWay}" Content="附加兼容性诊断摘要" />
+                                <Button Margin="0,18,0,0" MinWidth="116" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ComposeFeedbackCommand}" Content="创建反馈邮件" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

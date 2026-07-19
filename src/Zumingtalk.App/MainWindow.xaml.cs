@@ -603,6 +603,7 @@ public partial class MainWindow : Window
             return new ZumingtalkCloudAsrProvider(cloudCredentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
         }
 
+        await viewModel.EnsureBringYourOwnKeyAllowedAsync(CancellationToken.None);
         var credentials = await sqliteStore.GetBailianCredentialsAsync(CancellationToken.None);
         return new BailianFunAsrProvider(credentials, viewModel.Settings.Recognition.SemanticPunctuationEnabled);
     }
