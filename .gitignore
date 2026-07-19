@@ -28,6 +28,10 @@ recordings/
 *.sqlite
 *.sqlite3
 
+# Service schema and EF model source are code, not runtime data.
+!src/Zumingtalk.Service/Data/
+!src/Zumingtalk.Service/Data/**
+
 # Credentials and local configuration
 .env
 .env.*
