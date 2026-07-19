@@ -48,6 +48,8 @@ public sealed class ShellViewModel : ObservableObject
     private string subscriptionQuotaText = "完成设备激活后显示祖名云端额度";
     private bool hasActiveProEntitlement;
     private bool includeFeedbackDiagnostics;
+    private string latestOrderNo = string.Empty;
+    private string latestOrderStatusText = "尚未创建订单";
 
     public ShellViewModel()
         : this(null, null, null, null, null)
@@ -91,6 +93,9 @@ public sealed class ShellViewModel : ObservableObject
         ComposeFeedbackCommand = new RelayCommand(_ => ComposeFeedback());
         ActivateCloudCommand = new RelayCommand(_ => _ = ActivateCloudAsync());
         RefreshEntitlementCommand = new RelayCommand(_ => _ = RefreshEntitlementAsync());
+        BuyProCommand = new RelayCommand(_ => _ = CreateOrderAsync("pro_month"));
+        BuyAddOnCommand = new RelayCommand(_ => _ = CreateOrderAsync("add_on_10h"));
+        RefreshOrderCommand = new RelayCommand(_ => _ = RefreshOrderAsync(), _ => !string.IsNullOrWhiteSpace(LatestOrderNo));
         CopyCommand = new RelayCommand(CopyRecord, parameter => parameter is TranscriptionRecordViewModel);
         DeleteCommand = new RelayCommand(DeleteRecord, parameter => parameter is TranscriptionRecordViewModel);
         UndoDeleteCommand = new RelayCommand(_ => UndoDelete(), _ => lastDeletedRecord is not null);
@@ -346,6 +351,24 @@ public sealed class ShellViewModel : ObservableObject
         private set => SetProperty(ref subscriptionQuotaText, value);
     }
 
+    public string LatestOrderNo
+    {
+        get => latestOrderNo;
+        private set
+        {
+            if (SetProperty(ref latestOrderNo, value))
+            {
+                RefreshOrderCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string LatestOrderStatusText
+    {
+        get => latestOrderStatusText;
+        private set => SetProperty(ref latestOrderStatusText, value);
+    }
+
     public TranscriptionRecordViewModel? SelectedRecord
     {
         get => selectedRecord;
@@ -447,6 +470,12 @@ public sealed class ShellViewModel : ObservableObject
     public RelayCommand ActivateCloudCommand { get; }
 
     public RelayCommand RefreshEntitlementCommand { get; }
+
+    public RelayCommand BuyProCommand { get; }
+
+    public RelayCommand BuyAddOnCommand { get; }
+
+    public RelayCommand RefreshOrderCommand { get; }
 
     public RelayCommand CopyCommand { get; }
 
@@ -592,6 +621,56 @@ public sealed class ShellViewModel : ObservableObject
             SubscriptionPlan = "未激活或无法连接";
             SubscriptionQuotaText = ex.Message;
             HasActiveProEntitlement = false;
+        }
+    }
+
+    private async Task CreateOrderAsync(string productId)
+    {
+        if (cloudAccountClient is null)
+        {
+            ShowToast("支付服务尚未初始化", ToastKind.Error);
+            return;
+        }
+
+        try
+        {
+            var order = await cloudAccountClient.CreateOrderAsync(productId, CancellationToken.None);
+            LatestOrderNo = order.OrderNo;
+            LatestOrderStatusText = $"待支付 · ¥{order.AmountFen / 100m:0.00}";
+            Process.Start(new ProcessStartInfo(order.CheckoutUrl!) { UseShellExecute = true });
+            ShowToast("已打开支付宝沙箱收银页", ToastKind.Info);
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"创建订单失败：{ex.Message}", ToastKind.Error);
+        }
+    }
+
+    private async Task RefreshOrderAsync()
+    {
+        if (cloudAccountClient is null || string.IsNullOrWhiteSpace(LatestOrderNo))
+        {
+            return;
+        }
+
+        try
+        {
+            var order = await cloudAccountClient.GetOrderAsync(LatestOrderNo, CancellationToken.None);
+            LatestOrderStatusText = order.Status switch
+            {
+                "Paid" => "支付成功，权益已由服务端发放",
+                "Closed" => "订单已关闭",
+                "Refunded" => "订单已退款",
+                _ => "等待支付宝异步确认"
+            };
+            if (order.Status == "Paid")
+            {
+                await RefreshEntitlementAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"刷新订单失败：{ex.Message}", ToastKind.Error);
         }
     }
 

@@ -122,11 +122,18 @@ public sealed class Order
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string OrderNo { get; set; }
     public Guid ActivationId { get; set; }
+    public DeviceActivation? Activation { get; set; }
     public required string ProductId { get; set; }
     public int AmountFen { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Created;
+    public string? ProviderTradeNo { get; set; }
+    public string? RefundRequestNo { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
+    public DateTimeOffset? RefundedAt { get; set; }
 }
 
 public sealed class PaymentNotification
@@ -136,6 +143,11 @@ public sealed class PaymentNotification
     public required string ProviderNotificationId { get; set; }
     public required string OrderNo { get; set; }
     public bool SignatureVerified { get; set; }
+    public required string EventType { get; set; }
+    public string? ProviderTradeNo { get; set; }
+    public int? AmountFen { get; set; }
+    public bool Processed { get; set; }
+    public required string ProcessingResult { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
 }

@@ -565,6 +565,19 @@
                         </Border>
                         <Border Style="{StaticResource SectionBorderStyle}">
                             <StackPanel>
+                                <TextBlock FontSize="17" FontWeight="Bold" Text="支付宝沙箱" />
+                                <TextBlock Margin="0,7,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="内测建议价由服务端商品表确定，客户端不会提交或修改金额。" />
+                                <StackPanel Margin="0,18,0,0" Orientation="Horizontal">
+                                    <Button MinWidth="142" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding BuyProCommand}" Content="购买 Pro 30 天" />
+                                    <Button MinWidth="154" Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BuyAddOnCommand}" Content="购买 10 小时加量包" />
+                                    <Button MinWidth="116" Margin="12,0,0,0" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding RefreshOrderCommand}" Content="刷新订单" />
+                                </StackPanel>
+                                <TextBlock Margin="0,16,0,0" FontSize="13" FontWeight="Bold" Text="{Binding LatestOrderStatusText}" />
+                                <TextBlock Margin="0,6,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding LatestOrderNo}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
                                 <TextBlock FontSize="17" FontWeight="Bold" Text="激活此设备" />
                                 <TextBlock Margin="0,5,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="邀请码仅绑定一台设备。设备令牌只保存在当前 Windows 用户的加密存储中。" />
                                 <TextBlock Margin="0,20,0,0" FontSize="13" FontWeight="Bold" Foreground="#374863" Text="服务地址" />

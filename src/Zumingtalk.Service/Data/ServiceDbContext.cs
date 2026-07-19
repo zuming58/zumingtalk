@@ -100,7 +100,11 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
         entity.HasKey(value => value.Id);
         entity.Property(value => value.OrderNo).HasMaxLength(64).IsRequired();
         entity.Property(value => value.ProductId).HasMaxLength(32).IsRequired();
+        entity.Property(value => value.ProviderTradeNo).HasMaxLength(128);
+        entity.Property(value => value.RefundRequestNo).HasMaxLength(64);
         entity.HasIndex(value => value.OrderNo).IsUnique();
+        entity.HasIndex(value => new { value.ActivationId, value.Status });
+        entity.HasOne(value => value.Activation).WithMany().HasForeignKey(value => value.ActivationId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigurePaymentNotification(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<PaymentNotification> entity)
@@ -110,6 +114,9 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
         entity.Property(value => value.Provider).HasMaxLength(32).IsRequired();
         entity.Property(value => value.ProviderNotificationId).HasMaxLength(128).IsRequired();
         entity.Property(value => value.OrderNo).HasMaxLength(64).IsRequired();
+        entity.Property(value => value.EventType).HasMaxLength(32).IsRequired();
+        entity.Property(value => value.ProviderTradeNo).HasMaxLength(128);
+        entity.Property(value => value.ProcessingResult).HasMaxLength(64).IsRequired();
         entity.HasIndex(value => new { value.Provider, value.ProviderNotificationId }).IsUnique();
     }
 

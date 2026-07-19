@@ -482,5 +482,11 @@ public sealed class SqliteStoreTests
 
         public Task<Domain.Services.CloudEntitlementSnapshot> GetEntitlementAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new Domain.Services.CloudEntitlementSnapshot(plan, DateTimeOffset.UtcNow, []));
+
+        public Task<Domain.Services.CloudOrderSnapshot> CreateOrderAsync(string productId, CancellationToken cancellationToken) =>
+            Task.FromResult(new Domain.Services.CloudOrderSnapshot("test-order", productId, 2000, "PendingPayment", "https://example.test/checkout", DateTimeOffset.UtcNow.AddMinutes(30)));
+
+        public Task<Domain.Services.CloudOrderSnapshot> GetOrderAsync(string orderNo, CancellationToken cancellationToken) =>
+            Task.FromResult(new Domain.Services.CloudOrderSnapshot(orderNo, "pro_month", 2000, "Paid", null, DateTimeOffset.UtcNow.AddMinutes(30)));
     }
 }

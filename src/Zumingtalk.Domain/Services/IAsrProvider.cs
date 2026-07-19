@@ -25,6 +25,10 @@ public interface ICloudAccountClient
     Task ActivateAsync(string serviceBaseUrl, string inviteCode, CancellationToken cancellationToken);
 
     Task<CloudEntitlementSnapshot> GetEntitlementAsync(CancellationToken cancellationToken);
+
+    Task<CloudOrderSnapshot> CreateOrderAsync(string productId, CancellationToken cancellationToken);
+
+    Task<CloudOrderSnapshot> GetOrderAsync(string orderNo, CancellationToken cancellationToken);
 }
 
 public interface IDeviceFingerprintProvider
@@ -35,3 +39,5 @@ public interface IDeviceFingerprintProvider
 public sealed record CloudEntitlementSnapshot(string Plan, DateTimeOffset ServerTime, IReadOnlyList<CloudQuotaBucket> QuotaBuckets);
 
 public sealed record CloudQuotaBucket(string Kind, int RemainingSeconds, DateTimeOffset? ExpiresAt);
+
+public sealed record CloudOrderSnapshot(string OrderNo, string ProductId, int AmountFen, string Status, string? CheckoutUrl, DateTimeOffset ExpiresAt);
