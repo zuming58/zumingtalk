@@ -343,6 +343,26 @@
                     <StackPanel>
                         <Border Style="{StaticResource SectionBorderStyle}">
                             <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                    <Border Width="40" Height="40" CornerRadius="11" Background="#E9FBFD">
+                                        <TextBlock Style="{StaticResource IconTextStyle}" Foreground="#149FB2" Text="&#xE765;" />
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0">
+                                        <TextBlock FontSize="17" FontWeight="Bold" Text="直接说与热键" />
+                                        <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="右 Alt 是唯一主热键。" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Grid Width="440" HorizontalAlignment="Left">
+                                    <StackPanel>
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="主热键" />
+                                        <TextBlock Margin="0,8,0,0" FontSize="15" FontWeight="Bold" Text="{Binding Settings.Hotkeys.PrimaryHotkey}" />
+                                    </StackPanel>
+                                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding PrimaryHotkeyStatusText}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
                                 <Grid Margin="0,0,0,22">
                                     <StackPanel Orientation="Horizontal">
                                         <Border Width="40" Height="40" CornerRadius="11" Background="#EDF2FF">
@@ -354,7 +374,7 @@
                                         </StackPanel>
                                     </StackPanel>
                                     <Border HorizontalAlignment="Right" Padding="10,7" Background="#EBFAF4" CornerRadius="99">
-                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#218967" Text="百炼实时识别" />
+                                        <TextBlock FontSize="12" FontWeight="Bold" Foreground="#218967" Text="云端 / 自有模型" />
                                     </Border>
                                 </Grid>
 
@@ -378,18 +398,22 @@
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="模型" />
                                         <TextBox Margin="0,8,0,0" IsReadOnly="True" Style="{StaticResource FieldTextBoxStyle}" Text="{Binding RecognitionModelName}" />
                                     </StackPanel>
-                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsUsingBailianRecognition, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding CanEditBailianCredentials, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="百炼 API Key" />
                                         <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnBailianApiKeyPasswordChanged" />
                                         <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="使用华北 2（北京）地域的 API Key；保存后仅显示掩码，不会明文写入数据库。" />
                                     </StackPanel>
-                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsUsingVolcengineRecognition, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding CanEditVolcengineCredentials, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="火山引擎 API Key" />
                                         <PasswordBox Margin="0,8,0,0" Style="{StaticResource FieldPasswordBoxStyle}" PasswordChanged="OnVolcengineApiKeyPasswordChanged" />
                                         <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="使用火山引擎语音控制台的 API Key；仅在本机由 Windows DPAPI 加密保存，直接连接火山引擎。" />
                                     </StackPanel>
+                                    <Grid Grid.Row="2" Grid.ColumnSpan="3" Visibility="{Binding IsBringYourOwnKeyLocked, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBlock Margin="0,0,150,0" VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="高级自有模型仅对有效 Pro 开放。已保存的加密凭证不会被删除。" TextWrapping="Wrap" />
+                                        <Button Width="132" HorizontalAlignment="Right" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding ShowSubscriptionCommand}" Content="查看订阅" />
+                                    </Grid>
                                 </Grid>
-                                <Button MinWidth="174" Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" />
+                                <Button MinWidth="174" Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding TestConnectionCommand}" Content="测试连接与麦克风" Visibility="{Binding CanEditBringYourOwnKey, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             </StackPanel>
                         </Border>
 
@@ -441,6 +465,27 @@
 
                         <Border Style="{StaticResource SectionBorderStyle}">
                             <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                    <Border Width="40" Height="40" CornerRadius="11" Background="#EBFAF4">
+                                        <TextBlock Style="{StaticResource IconTextStyle}" Foreground="#218967" Text="&#xE8B7;" />
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0">
+                                        <TextBlock FontSize="17" FontWeight="Bold" Text="系统与数据" />
+                                        <TextBlock Margin="0,4,0,0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Text="历史与录音仅保留在本机。" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Grid>
+                                    <StackPanel>
+                                        <TextBlock FontSize="13" FontWeight="Bold" Foreground="#374863" Text="本地保留周期" />
+                                        <TextBlock Margin="0,7,0,0" FontSize="14" Text="3 天" />
+                                    </StackPanel>
+                                    <Button MinWidth="148" HorizontalAlignment="Right" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenRecordingsFolderCommand}" Content="打开录音文件夹" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SectionBorderStyle}">
+                            <StackPanel>
                                 <Grid Margin="0,0,0,22">
                                     <StackPanel Orientation="Horizontal">
                                         <Border Width="40" Height="40" CornerRadius="11" Background="#F1EDFF">
@@ -456,14 +501,7 @@
                                     </Border>
                                 </Grid>
 
-                                <UniformGrid Columns="3" Margin="0,0,0,12">
-                                    <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
-                                        <StackPanel>
-                                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="主快捷键" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="14" FontWeight="Bold" Text="{Binding Settings.Hotkeys.PrimaryHotkey}" />
-                                            <TextBlock Margin="0,7,0,0" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding PrimaryHotkeyStatusText}" />
-                                        </StackPanel>
-                                    </Border>
+                                <UniformGrid Columns="2" Margin="0,0,0,12">
                                     <Border Margin="0,0,12,0" Padding="15" Background="#D6F7FAFF" BorderBrush="#E0EAF7" BorderThickness="1" CornerRadius="12">
                                         <StackPanel>
                                             <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Text="最近目标" />
@@ -551,6 +589,7 @@
                                 <TextBlock Margin="0,10,0,0" FontSize="14" LineHeight="24" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" Text="应用会优先写入原输入框；管理员窗口、安全软件或第三方编辑器拒绝模拟粘贴时，结果会保留在历史并复制到剪贴板。不会自动发送 Enter。360、UAC 和系统设置不会被应用修改。" />
                             </StackPanel>
                         </Border>
+
                         <Border Style="{StaticResource SectionBorderStyle}">
                             <StackPanel>
                                 <TextBlock FontSize="17" FontWeight="Bold" Text="额度、自有 Key 与隐私" />

@@ -274,6 +274,8 @@ public sealed class ShellViewModel : ObservableObject
             OnPropertyChanged(nameof(IsUsingCloudRecognition));
             OnPropertyChanged(nameof(IsUsingBailianRecognition));
             OnPropertyChanged(nameof(IsUsingVolcengineRecognition));
+            OnPropertyChanged(nameof(CanEditBailianCredentials));
+            OnPropertyChanged(nameof(CanEditVolcengineCredentials));
             OnPropertyChanged(nameof(RecognitionModelName));
             OnPropertyChanged(nameof(CanEditBringYourOwnKey));
         }
@@ -284,6 +286,12 @@ public sealed class ShellViewModel : ObservableObject
     public bool IsUsingBailianRecognition => RecognitionProvider == "自有百炼 Key";
 
     public bool IsUsingVolcengineRecognition => RecognitionProvider == "自有火山引擎 Key";
+
+    public bool CanEditBailianCredentials => IsUsingBailianRecognition && HasActiveProEntitlement;
+
+    public bool CanEditVolcengineCredentials => IsUsingVolcengineRecognition && HasActiveProEntitlement;
+
+    public bool IsBringYourOwnKeyLocked => !HasActiveProEntitlement;
 
     public string RecognitionModelName => RecognitionProvider switch
     {
@@ -300,13 +308,25 @@ public sealed class ShellViewModel : ObservableObject
             if (SetProperty(ref hasActiveProEntitlement, value))
             {
                 OnPropertyChanged(nameof(CanEditBringYourOwnKey));
+                OnPropertyChanged(nameof(CanEditBailianCredentials));
+                OnPropertyChanged(nameof(CanEditVolcengineCredentials));
+                OnPropertyChanged(nameof(IsBringYourOwnKeyLocked));
+                OnPropertyChanged(nameof(RecognitionProviderOptions));
+
+            }
+
+            if (!value && !IsUsingCloudRecognition)
+            {
+                RecognitionProvider = "祖名云端识别";
             }
         }
     }
 
     public bool CanEditBringYourOwnKey => !IsUsingCloudRecognition && HasActiveProEntitlement;
 
-    public IReadOnlyList<string> RecognitionProviderOptions { get; } = ["祖名云端识别", "自有百炼 Key", "自有火山引擎 Key"];
+    public IReadOnlyList<string> RecognitionProviderOptions => HasActiveProEntitlement
+        ? ["祖名云端识别", "自有百炼 Key", "自有火山引擎 Key"]
+        : ["祖名云端识别"];
 
     public string InviteCode
     {
@@ -476,6 +496,10 @@ public sealed class ShellViewModel : ObservableObject
         {
             await RefreshEntitlementAsync();
         }
+        else
+        {
+            HasActiveProEntitlement = false;
+        }
 
         LoadMicrophones();
 
@@ -516,7 +540,11 @@ public sealed class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(IsUsingCloudRecognition));
         OnPropertyChanged(nameof(IsUsingBailianRecognition));
         OnPropertyChanged(nameof(IsUsingVolcengineRecognition));
+        OnPropertyChanged(nameof(CanEditBailianCredentials));
+        OnPropertyChanged(nameof(CanEditVolcengineCredentials));
+        OnPropertyChanged(nameof(IsBringYourOwnKeyLocked));
         OnPropertyChanged(nameof(RecognitionModelName));
+        OnPropertyChanged(nameof(RecognitionProviderOptions));
         OnPropertyChanged(nameof(FallbackHotkeyEnabled));
         OnPropertyChanged(nameof(PreferredInsertionMode));
     }

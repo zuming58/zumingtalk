@@ -133,6 +133,29 @@ public sealed class SqliteStoreTests
 
         Assert.True(proViewModel.HasActiveProEntitlement);
         Assert.True(proViewModel.CanEditBringYourOwnKey);
+        Assert.Equal(3, proViewModel.RecognitionProviderOptions.Count);
+    }
+
+    [Fact]
+    public async Task ExpiredPro_HidesBringYourOwnSourcesAndFallsBackToCloudWithoutDeletingKey()
+    {
+        using var temp = new TempDirectory();
+        var paths = new AppPaths(temp.Path);
+        var store = new SqliteStore(paths);
+        await store.SaveBailianCredentialsAsync(new BailianCredentialSettings("test-existing-key"), CancellationToken.None);
+        await store.SaveAsync(Application.DesignTime.MockDataFactory.CreateSettings() with
+        {
+            Recognition = Application.DesignTime.MockDataFactory.CreateSettings().Recognition with { Provider = "自有百炼 Key" }
+        }, CancellationToken.None);
+        var viewModel = new Application.Shell.ShellViewModel(
+            store, store, store, null, paths, null, null, null, null, null, new FakeCloudAccountClient("Trial"));
+
+        await viewModel.InitializeAsync(CancellationToken.None);
+
+        Assert.Equal("祖名云端识别", viewModel.RecognitionProvider);
+        Assert.Single(viewModel.RecognitionProviderOptions);
+        Assert.True(viewModel.IsBringYourOwnKeyLocked);
+        Assert.Equal("test-existing-key", (await store.GetBailianCredentialsAsync(CancellationToken.None)).ApiKey);
     }
 
     [Fact]
