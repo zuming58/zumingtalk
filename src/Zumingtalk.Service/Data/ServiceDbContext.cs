@@ -27,6 +27,14 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
         ConfigureOrder(modelBuilder.Entity<Order>());
         ConfigurePaymentNotification(modelBuilder.Entity<PaymentNotification>());
         ConfigureAuditLog(modelBuilder.Entity<AdminAuditLog>());
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                property.SetColumnName(ToSnakeCase(property.Name));
+            }
+        }
     }
 
     private static void ConfigureInviteCode(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<InviteCode> entity)
@@ -129,5 +137,23 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
         entity.Property(value => value.TargetId).HasMaxLength(64).IsRequired();
         entity.Property(value => value.Metadata).HasMaxLength(2048).IsRequired();
         entity.HasIndex(value => value.CreatedAt);
+    }
+
+    private static string ToSnakeCase(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length + 8);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (char.IsUpper(character) && index > 0 &&
+                (char.IsLower(value[index - 1]) || (index + 1 < value.Length && char.IsLower(value[index + 1]))))
+            {
+                builder.Append('_');
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString();
     }
 }

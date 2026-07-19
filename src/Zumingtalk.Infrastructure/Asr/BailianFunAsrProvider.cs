@@ -164,7 +164,7 @@ public sealed class BailianFunAsrProvider : IAsrProvider
             var taskId = Guid.NewGuid().ToString("N");
             var socket = new ClientWebSocket();
             socket.Options.SetRequestHeader("Authorization", $"Bearer {credentials.ApiKey}");
-            socket.Options.SetRequestHeader("User-Agent", "Zumingtalk/0.6");
+            socket.Options.SetRequestHeader("User-Agent", "Zumingtalk/0.7");
             BailianFunAsrSession? session = null;
 
             try

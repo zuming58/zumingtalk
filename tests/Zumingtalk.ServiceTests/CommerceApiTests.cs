@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -271,6 +272,88 @@ public sealed class CommerceApiTests(CommerceApiFactory factory) : IClassFixture
         Assert.Equal("ZM-test-order", business.RootElement.GetProperty("out_trade_no").GetString());
     }
 
+    [Fact]
+    public async Task CostSummaryUsesOnlyNonContentOperationalMetrics()
+    {
+        var benchmarkStart = DateTimeOffset.UtcNow.AddDays(10);
+        var benchmarkEnd = benchmarkStart.AddHours(1);
+        var activationId = await CreateActivationWithBucketsAsync(600, 0);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
+            db.AsrSessions.Add(new AsrSession
+            {
+                ActivationId = activationId,
+                Source = "ZumingtalkCloud",
+                Status = AsrSessionStatus.Finished,
+                ReceivedPcmBytes = 64_000,
+                CreatedAt = benchmarkStart.AddMinutes(1),
+                FinishedAt = benchmarkStart.AddMinutes(2)
+            });
+            db.UsageLedger.Add(new UsageLedgerEntry
+            {
+                SessionId = $"benchmark-{Guid.NewGuid():N}",
+                ActivationId = activationId,
+                Source = "ZumingtalkCloud",
+                Seconds = 2,
+                Outcome = "completed",
+                CreatedAt = benchmarkStart.AddMinutes(2)
+            });
+            var orderNo = $"ZM-benchmark-{Guid.NewGuid():N}";
+            db.Orders.Add(new Order
+            {
+                OrderNo = orderNo,
+                ActivationId = activationId,
+                ProductId = "pro_month",
+                AmountFen = 2000,
+                Status = OrderStatus.Paid,
+                CreatedAt = benchmarkStart.AddMinutes(3),
+                ExpiresAt = benchmarkStart.AddMinutes(33),
+                PaidAt = benchmarkStart.AddMinutes(4)
+            });
+            db.PaymentNotifications.Add(new PaymentNotification
+            {
+                Provider = "alipay",
+                ProviderNotificationId = $"benchmark-notify-{Guid.NewGuid():N}",
+                OrderNo = orderNo,
+                SignatureVerified = false,
+                EventType = "TRADE_SUCCESS",
+                Processed = false,
+                ProcessingResult = "invalid_signature",
+                ReceivedAt = benchmarkStart.AddMinutes(4)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await AdminGetAsync($"/api/admin/cost/summary?from={Uri.EscapeDataString(benchmarkStart.ToString("O"))}&to={Uri.EscapeDataString(benchmarkEnd.ToString("O"))}");
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(64_000, document.RootElement.GetProperty("receivedPcmBytes").GetInt64());
+        Assert.Equal(2, document.RootElement.GetProperty("chargedAudioSeconds").GetInt32());
+        Assert.Equal(1, document.RootElement.GetProperty("invalidPaymentNotificationCount").GetInt32());
+        Assert.DoesNotContain("text", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("audioPath", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("token", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RelationalModelMatchesSnakeCasePostgresMigrations()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
+        var orderType = Assert.IsAssignableFrom<IReadOnlyEntityType>(db.Model.FindEntityType(typeof(Order)));
+        var orderTable = StoreObjectIdentifier.Table("orders", null);
+        var activationType = Assert.IsAssignableFrom<IReadOnlyEntityType>(db.Model.FindEntityType(typeof(DeviceActivation)));
+        var activationTable = StoreObjectIdentifier.Table("device_activations", null);
+
+        Assert.Equal("order_no", orderType.FindProperty(nameof(Order.OrderNo))!.GetColumnName(orderTable));
+        Assert.Equal("provider_trade_no", orderType.FindProperty(nameof(Order.ProviderTradeNo))!.GetColumnName(orderTable));
+        Assert.Equal("device_fingerprint_hash", activationType.FindProperty(nameof(DeviceActivation.DeviceFingerprintHash))!.GetColumnName(activationTable));
+        Assert.Equal("token_hash", activationType.FindProperty(nameof(DeviceActivation.TokenHash))!.GetColumnName(activationTable));
+    }
+
     private async Task<string> CreateInviteAsync()
     {
         var response = await AdminPostAsync("/api/admin/invites");
@@ -329,6 +412,14 @@ public sealed class CommerceApiTests(CommerceApiFactory factory) : IClassFixture
     private async Task<HttpResponseMessage> AdminPostAsync(string path)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Add("X-Admin-Key", CommerceApiFactory.AdminKey);
+        request.Headers.Add("X-Admin-Actor", "test-administrator");
+        return await factory.CreateClient().SendAsync(request);
+    }
+
+    private async Task<HttpResponseMessage> AdminGetAsync(string path)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Add("X-Admin-Key", CommerceApiFactory.AdminKey);
         request.Headers.Add("X-Admin-Actor", "test-administrator");
         return await factory.CreateClient().SendAsync(request);

@@ -2,12 +2,20 @@ using System.Security.Claims;
 using System.Net.WebSockets;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http.Features;
 using Zumingtalk.Service.Commerce;
 using Zumingtalk.Service.Data;
 using Zumingtalk.Service.Payments;
 using Zumingtalk.Service.Security;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 64 * 1024);
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.KeyLengthLimit = 256;
+    options.ValueLengthLimit = 16 * 1024;
+    options.ValueCountLimit = 64;
+});
 
 builder.Services.AddDbContext<ServiceDbContext>(options =>
 {
@@ -24,6 +32,7 @@ builder.Services.AddScoped<ActivationService>();
 builder.Services.AddScoped<AdminCommerceService>();
 builder.Services.AddScoped<EntitlementService>();
 builder.Services.AddScoped<QuotaSessionService>();
+builder.Services.AddScoped<CostBenchmarkService>();
 builder.Services.Configure<AlipayOptions>(builder.Configuration.GetSection(AlipayOptions.SectionName));
 builder.Services.AddHttpClient<IAlipayGatewayClient, AlipayGatewayClient>();
 builder.Services.AddScoped<PaymentService>();
@@ -251,6 +260,19 @@ admin.MapPost("/orders/{orderNo}/refund", async (string orderNo, PaymentService 
     catch (InvalidOperationException ex)
     {
         return Results.Conflict(new { error = ex.Message });
+    }
+});
+admin.MapGet("/cost/summary", async (DateTimeOffset? from, DateTimeOffset? to, CostBenchmarkService service, CancellationToken cancellationToken) =>
+{
+    var end = to ?? DateTimeOffset.UtcNow;
+    var start = from ?? end.AddDays(-30);
+    try
+    {
+        return Results.Ok(await service.GetAsync(start, end, cancellationToken));
+    }
+    catch (ArgumentOutOfRangeException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
     }
 });
 
